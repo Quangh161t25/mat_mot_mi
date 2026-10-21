@@ -1,0 +1,230 @@
+'use client';
+
+import React, { useEffect, useState } from 'react';
+import QRCode from 'qrcode';
+import { Asset } from '@/types';
+import { Printer, X, CheckSquare, Square, Download } from 'lucide-react';
+
+interface PrintQRModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  assets: Asset[];
+  initialSelectedAssetId?: string;
+}
+
+interface AssetQR {
+  asset: Asset;
+  qrDataUrl: string;
+}
+
+export const PrintQRModal: React.FC<PrintQRModalProps> = ({
+  isOpen,
+  onClose,
+  assets,
+  initialSelectedAssetId,
+}) => {
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [qrItems, setQrItems] = useState<AssetQR[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (initialSelectedAssetId) {
+      setSelectedIds([initialSelectedAssetId]);
+    } else {
+      setSelectedIds(assets.map(a => a.id));
+    }
+  }, [initialSelectedAssetId, assets, isOpen]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const generateQRCodes = async () => {
+      setLoading(true);
+      const itemsToRender = assets.filter(a => selectedIds.includes(a.id));
+      const origin = typeof window !== 'undefined' ? window.location.origin : 'https://matmotmimedia.vn';
+
+      const results = await Promise.all(
+        itemsToRender.map(async asset => {
+          try {
+            // URL directed to the asset page
+            const targetUrl = `${origin}/assets/${asset.code}`;
+            const qrDataUrl = await QRCode.toDataURL(targetUrl, {
+              width: 300,
+              margin: 1,
+              color: {
+                dark: '#000000',
+                light: '#FFFFFF',
+              },
+            });
+            return { asset, qrDataUrl };
+          } catch (e) {
+            console.error('Lỗi tạo QR:', e);
+            return null;
+          }
+        })
+      );
+
+      setQrItems(results.filter(Boolean) as AssetQR[]);
+      setLoading(false);
+    };
+
+    generateQRCodes();
+  }, [selectedIds, assets, isOpen]);
+
+  if (!isOpen) return null;
+
+  const toggleSelectAll = () => {
+    if (selectedIds.length === assets.length) {
+      setSelectedIds([]);
+    } else {
+      setSelectedIds(assets.map(a => a.id));
+    }
+  };
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds(prev => 
+      prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
+    );
+  };
+
+  const handlePrint = () => {
+    window.print();
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-sm overflow-y-auto">
+      {/* Controls Container - Hidden during Print */}
+      <div className="bg-[#131B2E] border border-slate-800 rounded-2xl w-full max-w-4xl max-h-[90vh] flex flex-col no-print shadow-2xl">
+        <div className="p-4 sm:p-5 border-b border-slate-800 flex items-center justify-between">
+          <div>
+            <h2 className="text-lg sm:text-xl font-bold text-white flex items-center gap-2">
+              <Printer className="w-5 h-5 text-orange-500" />
+              In Tem Dán Mã QR Thiết Bị
+            </h2>
+            <p className="text-xs sm:text-sm text-slate-400">
+              In tem dán lên máy ảnh, lens, đèn, phụ kiện để quét nhanh bằng điện thoại
+            </p>
+          </div>
+          <button
+            onClick={onClose}
+            className="p-2 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800/80 transition"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Toolbar */}
+        <div className="p-4 bg-slate-900/50 border-b border-slate-800 flex flex-wrap items-center justify-between gap-3 text-sm">
+          <button
+            onClick={toggleSelectAll}
+            className="flex items-center gap-2 text-slate-300 hover:text-white"
+          >
+            {selectedIds.length === assets.length ? (
+              <CheckSquare className="w-4 h-4 text-orange-500" />
+            ) : (
+              <Square className="w-4 h-4 text-slate-500" />
+            )}
+            <span>Chọn tất cả ({selectedIds.length}/{assets.length})</span>
+          </button>
+
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handlePrint}
+              disabled={selectedIds.length === 0 || loading}
+              className="flex items-center gap-2 px-4 py-2 bg-orange-600 hover:bg-orange-500 disabled:opacity-50 text-white font-medium rounded-xl shadow-lg shadow-orange-600/30 transition"
+            >
+              <Printer className="w-4 h-4" />
+              In ngay ({selectedIds.length} tem)
+            </button>
+          </div>
+        </div>
+
+        {/* Select items selector chip list */}
+        <div className="p-3 border-b border-slate-800 flex flex-wrap gap-2 max-h-28 overflow-y-auto">
+          {assets.map(a => {
+            const isSelected = selectedIds.includes(a.id);
+            return (
+              <button
+                key={a.id}
+                onClick={() => toggleSelect(a.id)}
+                className={`text-xs px-2.5 py-1 rounded-lg border transition flex items-center gap-1.5 ${
+                  isSelected 
+                    ? 'bg-orange-500/20 text-orange-300 border-orange-500/50' 
+                    : 'bg-slate-800/50 text-slate-400 border-slate-700/50 hover:border-slate-600'
+                }`}
+              >
+                <span className="font-mono font-bold">{a.code}</span>
+                <span className="truncate max-w-[120px]">{a.name}</span>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Label Preview Grid */}
+        <div className="p-4 sm:p-6 overflow-y-auto flex-1 bg-slate-950/60">
+          {loading ? (
+            <div className="py-12 text-center text-slate-400">Đang khởi tạo mã QR...</div>
+          ) : qrItems.length === 0 ? (
+            <div className="py-12 text-center text-slate-500">Chưa chọn thiết bị nào để in.</div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+              {qrItems.map(({ asset, qrDataUrl }) => (
+                <div
+                  key={asset.id}
+                  className="bg-white text-black p-3.5 rounded-xl border border-dashed border-gray-400 flex flex-col items-center justify-between text-center shadow-md"
+                >
+                  <div className="text-[11px] font-bold tracking-wider uppercase text-gray-800 border-b border-gray-300 pb-1 w-full">
+                    MẮT MỘT MÍ MEDIA
+                  </div>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={qrDataUrl}
+                    alt={asset.code}
+                    className="w-32 h-32 object-contain my-1"
+                  />
+                  <div className="font-mono font-extrabold text-sm text-black tracking-wide bg-gray-100 px-2 py-0.5 rounded w-full">
+                    {asset.code}
+                  </div>
+                  <div className="text-xs font-semibold text-gray-900 mt-1 line-clamp-1 w-full">
+                    {asset.name}
+                  </div>
+                  <div className="text-[10px] text-gray-500 mt-0.5">
+                    Quét QR mượn / trả / kiểm kê
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* PRINT-ONLY CONTAINER (Standard A4 Sticker sheet format) */}
+      <div className="hidden print:block fixed inset-0 bg-white p-4">
+        <div className="grid grid-cols-3 gap-3">
+          {qrItems.map(({ asset, qrDataUrl }) => (
+            <div
+              key={`print-${asset.id}`}
+              className="qr-label-card p-3 border-2 border-black flex flex-col items-center justify-center text-center rounded-lg"
+              style={{ minHeight: '160px' }}
+            >
+              <div className="text-[10px] font-black tracking-wider uppercase text-black border-b border-black pb-0.5 w-full">
+                MẮT MỘT MÍ MEDIA
+              </div>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={qrDataUrl}
+                alt={asset.code}
+                className="w-24 h-24 object-contain my-1"
+              />
+              <div className="font-mono font-black text-xs text-black tracking-wide border border-black px-1.5 py-0.5 rounded w-full">
+                {asset.code}
+              </div>
+              <div className="text-[10px] font-bold text-black mt-1 leading-tight line-clamp-1">
+                {asset.name}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+};
