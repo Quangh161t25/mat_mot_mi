@@ -134,53 +134,54 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [isSyncing, setIsSyncing] = useState(false);
   const [isLoaded, setIsLoaded] = useState(false);
 
-  // Helper gửi request tới Google Sheets API
-  const dispatchToSheets = useCallback(async (action: string, payload: any) => {
-    try {
-      const res = await fetch('/api/sheets', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action, payload })
-      });
-      const data = await res.json();
-      if (!res.ok || !data.success) {
-        console.warn(`Lỗi ghi '${action}' sang Google Sheets:`, data.error);
-        setGoogleSheetsStatus('error');
-        setGoogleSheetsError(data.error || 'Lỗi ghi dữ liệu Google Sheets');
-      } else {
-        setGoogleSheetsStatus('connected');
-        setGoogleSheetsError(null);
-      }
-    } catch (err: any) {
-      console.warn(`Lỗi mạng khi ghi '${action}' sang Google Sheets:`, err);
-      setGoogleSheetsStatus('error');
-      setGoogleSheetsError(err.message || 'Lỗi kết nối API Google Sheets');
-    }
-  }, []);
-
-  // Sync from Google Sheets
+  // 1. Sync from Google Sheets (Bỏ hoàn toàn cache để đảm bảo Google Sheets là nguồn dữ liệu chuẩn duy nhất)
   const syncWithGoogleSheets = useCallback(async () => {
     setIsSyncing(true);
     try {
-      const res = await fetch('/api/sheets');
+      const res = await fetch(`/api/sheets?t=${Date.now()}`, {
+        cache: 'no-store',
+        headers: {
+          'Pragma': 'no-cache',
+          'Cache-Control': 'no-cache',
+        }
+      });
       const json = await res.json();
       
       if (res.ok && json.success && json.connected) {
         if (json.data) {
-          if (json.data.assets && json.data.assets.length > 0) {
+          // 1. Đồng bộ Thiết bị (Nếu xóa trên Sheet thì trên web cũng xóa theo ngay)
+          if (Array.isArray(json.data.assets)) {
             setAssets(json.data.assets);
+            try {
+              localStorage.setItem(STORAGE_KEYS.ASSETS, JSON.stringify(json.data.assets));
+            } catch (e) {}
           }
-          if (json.data.profiles && json.data.profiles.length > 0) {
+          // 2. Đồng bộ Nhân sự
+          if (Array.isArray(json.data.profiles) && json.data.profiles.length > 0) {
             setProfiles(json.data.profiles);
+            try {
+              localStorage.setItem(STORAGE_KEYS.PROFILES, JSON.stringify(json.data.profiles));
+            } catch (e) {}
           }
-          if (json.data.transfers && json.data.transfers.length > 0) {
+          // 3. Đồng bộ Mượn - Trả
+          if (Array.isArray(json.data.transfers)) {
             setTransfers(json.data.transfers);
+            try {
+              localStorage.setItem(STORAGE_KEYS.TRANSFERS, JSON.stringify(json.data.transfers));
+            } catch (e) {}
           }
-          if (json.data.auditItems && json.data.auditItems.length > 0) {
+          // 4. Đồng bộ Kiểm kê
+          if (Array.isArray(json.data.auditItems)) {
             setAuditItems(json.data.auditItems);
+            try {
+              localStorage.setItem(STORAGE_KEYS.AUDIT_ITEMS, JSON.stringify(json.data.auditItems));
+            } catch (e) {}
           }
-          if (json.data.auditSessions && json.data.auditSessions.length > 0) {
+          if (Array.isArray(json.data.auditSessions) && json.data.auditSessions.length > 0) {
             setAuditSessions(json.data.auditSessions);
+            try {
+              localStorage.setItem(STORAGE_KEYS.AUDIT_SESSIONS, JSON.stringify(json.data.auditSessions));
+            } catch (e) {}
           }
         }
         setGoogleSheetsStatus('connected');
@@ -197,6 +198,32 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setIsSyncing(false);
     }
   }, []);
+
+  // 2. Helper gửi request tới Google Sheets API và tự động refresh lại state
+  const dispatchToSheets = useCallback(async (action: string, payload: any) => {
+    try {
+      const res = await fetch('/api/sheets', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action, payload })
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        console.warn(`Lỗi ghi '${action}' sang Google Sheets:`, data.error);
+        setGoogleSheetsStatus('error');
+        setGoogleSheetsError(data.error || 'Lỗi ghi dữ liệu Google Sheets');
+      } else {
+        setGoogleSheetsStatus('connected');
+        setGoogleSheetsError(null);
+        // Tự động kéo lại dữ liệu mới nhất từ Sheet về
+        setTimeout(() => syncWithGoogleSheets(), 300);
+      }
+    } catch (err: any) {
+      console.warn(`Lỗi mạng khi ghi '${action}' sang Google Sheets:`, err);
+      setGoogleSheetsStatus('error');
+      setGoogleSheetsError(err.message || 'Lỗi kết nối API Google Sheets');
+    }
+  }, [syncWithGoogleSheets]);
 
   // Load from localStorage on mount & Register Service Worker & Sync Google Sheets
   useEffect(() => {
