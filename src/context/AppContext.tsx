@@ -37,6 +37,9 @@ interface AppContextType {
   auditItems: AuditItem[];
   notifications: AppNotification[];
   isConfiguredWithSupabase: boolean;
+  isGoogleSheetsConnected: boolean;
+  googleSheetUrl: string;
+  syncWithGoogleSheets: () => Promise<void>;
   
   // Permissions
   isAdmin: boolean;
@@ -102,6 +105,8 @@ interface AppContextType {
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
+const GOOGLE_SHEET_URL = 'https://docs.google.com/spreadsheets/d/10eUWTeN5AmmOkEG4K2gc2DQEF-3PZtSQs1QOtHfiCF4/edit';
+
 const STORAGE_KEYS = {
   CURRENT_USER: 'mmm_current_user',
   PROFILES: 'mmm_profiles',
@@ -120,9 +125,34 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [auditSessions, setAuditSessions] = useState<AuditSession[]>(INITIAL_AUDIT_SESSIONS);
   const [auditItems, setAuditItems] = useState<AuditItem[]>(INITIAL_AUDIT_ITEMS);
   const [notifications, setNotifications] = useState<AppNotification[]>(INITIAL_NOTIFICATIONS);
+  const [isGoogleSheetsConnected, setIsGoogleSheetsConnected] = useState(true);
   const [isLoaded, setIsLoaded] = useState(false);
 
-  // Load from localStorage on mount & Register Service Worker for PWA
+  // Sync from Google Sheets
+  const syncWithGoogleSheets = async () => {
+    try {
+      const res = await fetch('/api/sheets');
+      if (res.ok) {
+        const json = await res.json();
+        if (json.success && json.data) {
+          if (json.data.assets && json.data.assets.length > 0) {
+            setAssets(json.data.assets);
+          }
+          if (json.data.profiles && json.data.profiles.length > 0) {
+            setProfiles(json.data.profiles);
+          }
+          if (json.data.transfers && json.data.transfers.length > 0) {
+            setTransfers(json.data.transfers);
+          }
+          setIsGoogleSheetsConnected(true);
+        }
+      }
+    } catch (err) {
+      console.warn('Lỗi đồng bộ Google Sheets:', err);
+    }
+  };
+
+  // Load from localStorage on mount & Register Service Worker & Sync Google Sheets
   useEffect(() => {
     try {
       const storedProfiles = localStorage.getItem(STORAGE_KEYS.PROFILES);
@@ -154,6 +184,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     // Register Service Worker for PWA & Mobile Push
     registerServiceWorker();
+
+    // Sync with Google Sheets in background
+    syncWithGoogleSheets();
   }, []);
 
   // Save to localStorage when state changes
@@ -274,7 +307,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }));
   };
 
-  // 4. Quy trình mượn - trả và BẮN THÔNG BÁO TỚI NGƯỜI NHẬN
+  // 4. Quy trình mượn - trả và BẮN THÔNG BÁO TỚI NGƯỜI NHẬN + GHI GOOGLE SHEETS
   const initiateTransfer = (data: {
     assetId: string;
     toUserId: string;
@@ -348,6 +381,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       body: notifBody,
       url: '/transfers',
     });
+
+    // Ghi đồng bộ sang Google Sheets
+    fetch('/api/sheets', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'append_transfer',
+        payload: { transfer: newTransfer }
+      })
+    }).catch(e => console.warn('Lỗi ghi transfer sang Google Sheets:', e));
 
     return { success: true };
   };
@@ -431,6 +474,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       body: confirmBody,
       url: '/transfers',
     });
+
+    // Cập nhật trạng thái máy trên Google Sheets sheet THIET_BI
+    fetch('/api/sheets', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'update_asset_status',
+        payload: {
+          assetCode: transfer.asset_code,
+          status: nextStatus,
+          holderName: nextHolder ? nextHolder.full_name : '',
+          location: transfer.location_after || 'Kho Studio',
+        }
+      })
+    }).catch(e => console.warn('Lỗi cập nhật thiết bị Google Sheets:', e));
 
     return { success: true };
   };
@@ -535,6 +593,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       updated_at: new Date().toISOString(),
     });
 
+    // Đồng bộ kiểm kê sang Google Sheets sheet KIEM_KE
+    const session = auditSessions.find(s => s.id === params.sessionId);
+    fetch('/api/sheets', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'append_audit',
+        payload: {
+          item: newItem,
+          sessionTitle: session ? session.title : 'Kiểm kê thực tế'
+        }
+      })
+    }).catch(e => console.warn('Lỗi ghi audit sang Google Sheets:', e));
+
     return { success: true, item: newItem };
   };
 
@@ -618,6 +690,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         auditItems,
         notifications,
         isConfiguredWithSupabase: isSupabaseConfigured(),
+        isGoogleSheetsConnected,
+        googleSheetUrl: GOOGLE_SHEET_URL,
+        syncWithGoogleSheets,
         
         isAdmin,
         isManager,
