@@ -4,7 +4,10 @@ import './globals.css';
 import { AppProvider } from '@/context/AppContext';
 import { Navbar } from '@/components/Navbar';
 
-const inter = Inter({ subsets: ['latin'] });
+const inter = Inter({ 
+  subsets: ['latin'],
+  display: 'swap',
+});
 
 export const metadata: Metadata = {
   title: 'Mắt Một Mí Media | Quản Lý Toàn Bộ Thiết Bị Máy Ảnh Cưới',
@@ -36,12 +39,6 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="vi" className="light">
-      <head>
-        <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
-        <meta name="apple-mobile-web-app-capable" content="yes" />
-        <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-        <meta name="apple-mobile-web-app-title" content="Mắt Một Mí" />
-      </head>
       <body className={`${inter.className} bg-slate-50 text-slate-900 antialiased min-h-screen flex flex-col font-sans`}>
         <AppProvider>
           <Navbar />
