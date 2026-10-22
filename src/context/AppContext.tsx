@@ -9,16 +9,23 @@ import {
   AuditItem, 
   AssetStatus, 
   AlertReason,
-  TransferType 
+  TransferType,
+  AppNotification
 } from '@/types';
 import { 
   INITIAL_PROFILES, 
   INITIAL_ASSETS, 
   INITIAL_TRANSFERS, 
   INITIAL_AUDIT_SESSIONS, 
-  INITIAL_AUDIT_ITEMS 
+  INITIAL_AUDIT_ITEMS,
+  INITIAL_NOTIFICATIONS
 } from '@/lib/mock-data';
-import { isSupabaseConfigured, supabase } from '@/lib/supabase';
+import { isSupabaseConfigured } from '@/lib/supabase';
+import { 
+  registerServiceWorker, 
+  requestNotificationPermission, 
+  triggerDeviceNotification 
+} from '@/lib/notifications';
 
 interface AppContextType {
   currentUser: UserProfile;
@@ -28,6 +35,7 @@ interface AppContextType {
   transfers: TransferRecord[];
   auditSessions: AuditSession[];
   auditItems: AuditItem[];
+  notifications: AppNotification[];
   isConfiguredWithSupabase: boolean;
   
   // Permissions
@@ -79,6 +87,13 @@ interface AppContextType {
   }) => { success: boolean; item?: AuditItem; error?: string };
   completeAuditSession: (sessionId: string) => void;
   
+  // Notifications & Push on Phone
+  unreadNotificationsCount: number;
+  markNotificationAsRead: (id: string) => void;
+  markAllNotificationsAsRead: () => void;
+  requestPushPermission: () => Promise<boolean>;
+  sendTestNotification: () => void;
+  
   // Utils
   resetToDemoData: () => void;
   pendingTransfersCount: number;
@@ -94,6 +109,7 @@ const STORAGE_KEYS = {
   TRANSFERS: 'mmm_transfers',
   AUDIT_SESSIONS: 'mmm_audit_sessions',
   AUDIT_ITEMS: 'mmm_audit_items',
+  NOTIFICATIONS: 'mmm_notifications',
 };
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -103,9 +119,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [transfers, setTransfers] = useState<TransferRecord[]>(INITIAL_TRANSFERS);
   const [auditSessions, setAuditSessions] = useState<AuditSession[]>(INITIAL_AUDIT_SESSIONS);
   const [auditItems, setAuditItems] = useState<AuditItem[]>(INITIAL_AUDIT_ITEMS);
+  const [notifications, setNotifications] = useState<AppNotification[]>(INITIAL_NOTIFICATIONS);
   const [isLoaded, setIsLoaded] = useState(false);
 
-  // Load from localStorage on mount
+  // Load from localStorage on mount & Register Service Worker for PWA
   useEffect(() => {
     try {
       const storedProfiles = localStorage.getItem(STORAGE_KEYS.PROFILES);
@@ -113,6 +130,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const storedTransfers = localStorage.getItem(STORAGE_KEYS.TRANSFERS);
       const storedSessions = localStorage.getItem(STORAGE_KEYS.AUDIT_SESSIONS);
       const storedItems = localStorage.getItem(STORAGE_KEYS.AUDIT_ITEMS);
+      const storedNotifications = localStorage.getItem(STORAGE_KEYS.NOTIFICATIONS);
       const storedUser = localStorage.getItem(STORAGE_KEYS.CURRENT_USER);
 
       if (storedProfiles) setProfiles(JSON.parse(storedProfiles));
@@ -120,6 +138,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (storedTransfers) setTransfers(JSON.parse(storedTransfers));
       if (storedSessions) setAuditSessions(JSON.parse(storedSessions));
       if (storedItems) setAuditItems(JSON.parse(storedItems));
+      if (storedNotifications) setNotifications(JSON.parse(storedNotifications));
       
       if (storedUser) {
         const parsed = JSON.parse(storedUser);
@@ -132,6 +151,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     } finally {
       setIsLoaded(true);
     }
+
+    // Register Service Worker for PWA & Mobile Push
+    registerServiceWorker();
   }, []);
 
   // Save to localStorage when state changes
@@ -143,11 +165,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       localStorage.setItem(STORAGE_KEYS.TRANSFERS, JSON.stringify(transfers));
       localStorage.setItem(STORAGE_KEYS.AUDIT_SESSIONS, JSON.stringify(auditSessions));
       localStorage.setItem(STORAGE_KEYS.AUDIT_ITEMS, JSON.stringify(auditItems));
+      localStorage.setItem(STORAGE_KEYS.NOTIFICATIONS, JSON.stringify(notifications));
       localStorage.setItem(STORAGE_KEYS.CURRENT_USER, JSON.stringify(currentUser));
     } catch (err) {
       console.error('Lỗi ghi local storage:', err);
     }
-  }, [profiles, assets, transfers, auditSessions, auditItems, currentUser, isLoaded]);
+  }, [profiles, assets, transfers, auditSessions, auditItems, notifications, currentUser, isLoaded]);
 
   // Roles check
   const isAdmin = currentUser?.role === 'admin';
@@ -251,7 +274,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }));
   };
 
-  // 4. Quy trình mượn - trả và chuyển giao 2 bên
+  // 4. Quy trình mượn - trả và BẮN THÔNG BÁO TỚI NGƯỜI NHẬN
   const initiateTransfer = (data: {
     assetId: string;
     toUserId: string;
@@ -264,7 +287,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const asset = assets.find(a => a.id === data.assetId);
     if (!asset) return { success: false, error: 'Thiết bị không tồn tại' };
 
-    // Không thể chuyển giao khi thiết bị đang chờ xác nhận khác
     if (asset.status === 'pending_transfer') {
       return { success: false, error: 'Thiết bị này đang trong một giao dịch chờ xác nhận khác!' };
     }
@@ -300,6 +322,33 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       location: data.locationAfter || asset.location,
     });
 
+    // 🔔 TẠO THÔNG BÁO VÀ BẮN TỚI ĐIỆN THOẠI NGƯỜI NHẬN
+    const notifTitle = `🔔 Yêu cầu nhận thiết bị mới`;
+    const notifBody = `${currentUser.full_name} đã chuyển giao "${asset.name}" (${asset.code}) cho bạn. Bấm để kiểm tra và xác nhận nhận máy!`;
+    
+    const newNotif: AppNotification = {
+      id: `notif-${Date.now()}`,
+      title: notifTitle,
+      message: notifBody,
+      type: 'transfer_request',
+      target_user_id: toUser.id,
+      actor_name: currentUser.full_name,
+      asset_code: asset.code,
+      asset_name: asset.name,
+      link: '/transfers',
+      is_read: false,
+      created_at: new Date().toISOString(),
+    };
+
+    setNotifications(prev => [newNotif, ...prev]);
+
+    // Rung điện thoại + Chuông âm thanh + Push Notification
+    triggerDeviceNotification({
+      title: notifTitle,
+      body: notifBody,
+      url: '/transfers',
+    });
+
     return { success: true };
   };
 
@@ -312,8 +361,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!transfer) return { success: false, error: 'Giao dịch không tồn tại' };
     if (transfer.status !== 'pending') return { success: false, error: 'Giao dịch không ở trạng thái chờ' };
 
-    // Strict rule: Người trả KHÔNG ĐƯỢC tự xác nhận đã nhận lại.
-    // Chỉ người nhận (to_user_id) hoặc Quản lý/Admin mới được xác nhận
     const isRecipient = currentUser.id === transfer.to_user_id;
     const isAuthorizedOverride = canManageEquipment;
 
@@ -331,7 +378,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       };
     }
 
-    // Xác nhận giao dịch
     const now = new Date().toISOString();
     setTransfers(prev => prev.map(t => {
       if (t.id === transferId) {
@@ -346,9 +392,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return t;
     }));
 
-    // Cập nhật trạng thái thiết bị:
-    // Nếu là 'return' (trả về kho/quản lý) -> Chuyển thành 🟢 available (Sẵn sàng)
-    // Nếu là 'borrow' hoặc 'peer_transfer' sang nhân sự khác -> Chuyển thành 🟡 in_use
     const isReturnedToInventory = transfer.transfer_type === 'return';
     const nextStatus: AssetStatus = isReturnedToInventory ? 'available' : 'in_use';
     const nextHolderId = isReturnedToInventory ? null : transfer.to_user_id;
@@ -361,6 +404,32 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       current_holder_name: nextHolder ? nextHolder.full_name : null,
       location: transfer.location_after || 'Kho Studio',
       due_date: isReturnedToInventory ? null : transfer.due_date,
+    });
+
+    // 🔔 THÔNG BÁO CHO NGƯỜI GIAO RẰNG BÊN NHẬN ĐÃ XÁC NHẬN XONG
+    const confirmTitle = `✅ Bàn giao hoàn tất`;
+    const confirmBody = `${currentUser.full_name} đã xác nhận nhận thiết bị "${transfer.asset_name}" (${transfer.asset_code}).`;
+
+    const confirmNotif: AppNotification = {
+      id: `notif-${Date.now()}`,
+      title: confirmTitle,
+      message: confirmBody,
+      type: 'transfer_confirmed',
+      target_user_id: transfer.from_user_id,
+      actor_name: currentUser.full_name,
+      asset_code: transfer.asset_code,
+      asset_name: transfer.asset_name,
+      link: '/transfers',
+      is_read: false,
+      created_at: new Date().toISOString(),
+    };
+
+    setNotifications(prev => [confirmNotif, ...prev]);
+
+    triggerDeviceNotification({
+      title: confirmTitle,
+      body: confirmBody,
+      url: '/transfers',
     });
 
     return { success: true };
@@ -381,7 +450,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return t;
     }));
 
-    // Revert asset status: if it had a holder previously, back to in_use, else available
     const asset = assets.find(a => a.id === transfer.asset_id);
     if (asset) {
       const prevHolder = asset.current_holder_id;
@@ -421,7 +489,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     const actualHolder = params.actualHolderId ? profiles.find(p => p.id === params.actualHolderId) : null;
 
-    // Tự động kiểm tra sai lệch (Discrepancy detection)
     const discrepancyList: string[] = [];
     if (asset.location.trim().toLowerCase() !== params.actualLocation.trim().toLowerCase()) {
       discrepancyList.push(`Sai lệch vị trí (Hệ thống: "${asset.location}", Thực tế: "${params.actualLocation}")`);
@@ -461,7 +528,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     setAuditItems(prev => [newItem, ...prev]);
 
-    // Tự động đồng bộ cập nhật thiết bị nếu người kiểm kê xác nhận
     updateAsset(asset.id, {
       location: params.actualLocation,
       current_holder_id: params.actualHolderId,
@@ -485,6 +551,36 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }));
   };
 
+  // Notification actions
+  const markNotificationAsRead = (id: string) => {
+    setNotifications(prev => prev.map(n => n.id === id ? { ...n, is_read: true } : n));
+  };
+
+  const markAllNotificationsAsRead = () => {
+    setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
+  };
+
+  const requestPushPermission = async (): Promise<boolean> => {
+    const res = await requestNotificationPermission();
+    if (res === 'granted') {
+      triggerDeviceNotification({
+        title: '🎉 Đã bật thông báo Mắt Một Mí Media!',
+        body: 'Điện thoại của bạn sẽ nhận được thông báo tức thì mỗi khi có yêu cầu mượn trả thiết bị.',
+        url: '/',
+      });
+      return true;
+    }
+    return false;
+  };
+
+  const sendTestNotification = () => {
+    triggerDeviceNotification({
+      title: '🔔 Thử nghiệm thông báo Mắt Một Mí',
+      body: 'Âm thanh chuông và rung trên điện thoại hoạt động rất tốt!',
+      url: '/transfers',
+    });
+  };
+
   const resetToDemoData = () => {
     setProfiles(INITIAL_PROFILES);
     setCurrentUser(INITIAL_PROFILES[0]);
@@ -492,10 +588,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setTransfers(INITIAL_TRANSFERS);
     setAuditSessions(INITIAL_AUDIT_SESSIONS);
     setAuditItems(INITIAL_AUDIT_ITEMS);
+    setNotifications(INITIAL_NOTIFICATIONS);
     localStorage.clear();
   };
 
-  // Dashboard calculations
+  // Unread count for current user
+  const unreadNotificationsCount = notifications.filter(
+    n => !n.is_read && (n.target_user_id === currentUser.id || n.target_user_id === 'all')
+  ).length;
+
   const pendingTransfersCount = transfers.filter(t => t.status === 'pending').length;
   
   const now = new Date();
@@ -515,6 +616,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         transfers,
         auditSessions,
         auditItems,
+        notifications,
         isConfiguredWithSupabase: isSupabaseConfigured(),
         
         isAdmin,
@@ -539,6 +641,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         createAuditSession,
         recordAuditScan,
         completeAuditSession,
+
+        unreadNotificationsCount,
+        markNotificationAsRead,
+        markAllNotificationsAsRead,
+        requestPushPermission,
+        sendTestNotification,
         
         resetToDemoData,
         pendingTransfersCount,

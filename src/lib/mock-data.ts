@@ -1,4 +1,4 @@
-import { UserProfile, Asset, TransferRecord, AuditSession, AuditItem } from '@/types';
+import { UserProfile, Asset, TransferRecord, AuditSession, AuditItem, AppNotification } from '@/types';
 
 export const INITIAL_PROFILES: UserProfile[] = [
   {
@@ -155,7 +155,7 @@ export const INITIAL_ASSETS: Asset[] = [
     current_holder_name: 'Phạm Hải Đăng (Videographer)',
     status: 'alert',
     alert_reason: 'overdue',
-    due_date: '2026-10-19T18:00:00Z', // Đã quá hạn!
+    due_date: '2026-10-19T18:00:00Z',
     notes: 'Đã quá hạn trả 3 ngày, cần liên hệ Đăng hoàn trả về kho',
     created_at: '2025-01-08T10:00:00Z',
     updated_at: '2026-10-20T08:00:00Z',
@@ -414,5 +414,47 @@ export const INITIAL_AUDIT_ITEMS: AuditItem[] = [
     has_discrepancy: true,
     discrepancy_details: 'Trục Pan bị kẹt nhẹ, chưa gửi bảo hành',
     notes: 'Cần đưa kỹ thuật viên trong tuần này',
+  }
+];
+
+export const INITIAL_NOTIFICATIONS: AppNotification[] = [
+  {
+    id: 'notif-1',
+    title: '🔔 Yêu cầu bàn giao thiết bị',
+    message: 'Lê Minh Tuấn đã gửi yêu cầu bàn giao Body Canon EOS R6 Mark II (MMM-CAM-003) cho bạn. Bấm để xác nhận!',
+    type: 'transfer_request',
+    target_user_id: 'u-staff-2', // Gửi cho Phạm Hải Đăng
+    actor_name: 'Lê Minh Tuấn',
+    asset_code: 'MMM-CAM-003',
+    asset_name: 'Body Canon EOS R6 Mark II',
+    link: '/transfers',
+    is_read: false,
+    created_at: '2026-10-22T00:30:00Z',
+  },
+  {
+    id: 'notif-2',
+    title: '⚠️ Cảnh báo thiết bị quá hạn',
+    message: 'Thiết bị Sony FE 70-200mm f/2.8 GM OSS II (MMM-LENS-002) đã quá hạn trả 3 ngày. Vui lòng hoàn trả về kho!',
+    type: 'overdue',
+    target_user_id: 'u-staff-2', // Gửi cho Phạm Hải Đăng
+    actor_name: 'Hệ thống Studio',
+    asset_code: 'MMM-LENS-002',
+    asset_name: 'Sony FE 70-200mm f/2.8 GM OSS II',
+    link: '/assets/MMM-LENS-002',
+    is_read: false,
+    created_at: '2026-10-20T08:00:00Z',
+  },
+  {
+    id: 'notif-3',
+    title: '✅ Bàn giao thành công',
+    message: 'Lê Minh Tuấn đã xác nhận nhận đủ thiết bị Sony FX3 Cinema Line (MMM-CAM-002).',
+    type: 'transfer_confirmed',
+    target_user_id: 'u-mgr-1', // Gửi cho quản lý Linh
+    actor_name: 'Lê Minh Tuấn',
+    asset_code: 'MMM-CAM-002',
+    asset_name: 'Sony FX3 Cinema Line (Quay Phim)',
+    link: '/transfers',
+    is_read: true,
+    created_at: '2026-10-21T09:00:00Z',
   }
 ];

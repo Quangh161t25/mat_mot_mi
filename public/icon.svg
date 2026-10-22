@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#EA580C"/>
+      <stop offset="100%" stop-color="#C2410C"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="128" fill="url(#bgGrad)"/>
+  <!-- Camera body -->
+  <path d="M144 180 L180 140 H332 L368 180 H412 C429.67 180 444 194.33 444 212 V372 C444 389.67 429.67 404 412 404 H100 C82.33 404 68 389.67 68 372 V212 C68 194.33 82.33 180 100 180 Z" fill="#FFFFFF" fill-opacity="0.95"/>
+  <!-- Camera Lens rings -->
+  <circle cx="256" cy="292" r="76" fill="#EA580C"/>
+  <circle cx="256" cy="292" r="60" fill="#FFFFFF"/>
+  <circle cx="256" cy="292" r="42" fill="#0F172A"/>
+  <circle cx="270" cy="278" r="14" fill="#FFFFFF" fill-opacity="0.75"/>
+  <!-- Small flash/viewfinder -->
+  <circle cx="390" cy="225" r="16" fill="#EA580C"/>
+  <!-- Text MMM -->
+  <text x="256" y="465" font-family="system-ui, -apple-system, sans-serif" font-size="44" font-weight="900" fill="#FFFFFF" text-anchor="middle" letter-spacing="4">MẮT MỘT MÍ</text>
+</svg>

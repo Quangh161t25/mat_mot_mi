@@ -1,16 +1,30 @@
 {
-  "name": "Mắt Một Mí Media Equipment",
-  "short_name": "MMM Media",
-  "description": "Quản lý toàn bộ thiết bị máy ảnh cưới Mắt Một Mí Media",
+  "name": "Mắt Một Mí Media - Quản Lý Thiết Bị",
+  "short_name": "Mắt Một Mí",
+  "description": "Quản lý toàn bộ thiết bị máy ảnh, lens, đèn quay chụp cưới Mắt Một Mí Media",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#0B0F17",
-  "theme_color": "#0B0F17",
+  "orientation": "portrait-primary",
+  "background_color": "#FFFFFF",
+  "theme_color": "#EA580C",
+  "categories": ["business", "productivity"],
   "icons": [
     {
-      "src": "/icon.png",
+      "src": "/icon-192.png",
       "sizes": "192x192",
-      "type": "image/png"
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
     }
   ]
 }

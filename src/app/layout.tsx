@@ -10,6 +10,15 @@ export const metadata: Metadata = {
   title: 'Mắt Một Mí Media | Quản Lý Toàn Bộ Thiết Bị Máy Ảnh Cưới',
   description: 'Hệ thống web app quản lý thiết bị, máy ảnh, lens, đèn, phụ kiện quay chụp cưới cho Mắt Một Mí Media. Quét mã QR, quy trình mượn trả 2 bên, kiểm kê tự động.',
   manifest: '/manifest.json',
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: 'default',
+    title: 'Mắt Một Mí',
+  },
+  icons: {
+    icon: '/icon-192.png',
+    apple: '/apple-touch-icon.png',
+  },
 };
 
 export const viewport: Viewport = {
@@ -27,6 +36,12 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="vi" className="light">
+      <head>
+        <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+        <meta name="apple-mobile-web-app-title" content="Mắt Một Mí" />
+      </head>
       <body className={`${inter.className} bg-slate-50 text-slate-900 antialiased min-h-screen flex flex-col font-sans`}>
         <AppProvider>
           <Navbar />

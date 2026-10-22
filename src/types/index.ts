@@ -117,3 +117,17 @@ export interface AuditItem {
   discrepancy_details?: string;
   notes?: string;
 }
+
+export interface AppNotification {
+  id: string;
+  title: string;
+  message: string;
+  type: 'transfer_request' | 'transfer_confirmed' | 'overdue' | 'issue';
+  target_user_id: string; // ID người nhận thông báo
+  actor_name: string;
+  asset_code?: string;
+  asset_name?: string;
+  link: string;
+  is_read: boolean;
+  created_at: string;
+}

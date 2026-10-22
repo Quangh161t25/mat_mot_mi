@@ -15,9 +15,11 @@ import {
   Bell, 
   ChevronDown, 
   RotateCcw,
-  Sparkles
+  Smartphone
 } from 'lucide-react';
 import { QRScannerModal } from './QRScannerModal';
+import { InstallAppModal } from './InstallAppModal';
+import { NotificationDrawer } from './NotificationDrawer';
 
 export const Navbar: React.FC = () => {
   const pathname = usePathname();
@@ -28,12 +30,14 @@ export const Navbar: React.FC = () => {
     profiles, 
     assets, 
     pendingTransfersCount, 
-    overdueAssetsCount,
+    unreadNotificationsCount,
     resetToDemoData 
   } = useApp();
 
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
+  const [isInstallModalOpen, setIsInstallModalOpen] = useState(false);
+  const [isNotificationDrawerOpen, setIsNotificationDrawerOpen] = useState(false);
 
   const navLinks = [
     { href: '/', label: 'Dashboard', icon: LayoutDashboard },
@@ -102,6 +106,16 @@ export const Navbar: React.FC = () => {
 
           {/* Header Action Controls */}
           <div className="flex items-center gap-2 sm:gap-2.5">
+            {/* Install App on Phone button */}
+            <button
+              onClick={() => setIsInstallModalOpen(true)}
+              className="hidden sm:flex items-center gap-1.5 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl border border-slate-200 transition"
+              title="Cài app vào iPhone hoặc Android"
+            >
+              <Smartphone className="w-4 h-4 text-orange-600" />
+              <span>Cài App</span>
+            </button>
+
             {/* Quick Scan QR Button */}
             <button
               onClick={() => setIsScannerOpen(true)}
@@ -111,19 +125,19 @@ export const Navbar: React.FC = () => {
               <span>Quét QR</span>
             </button>
 
-            {/* Notification Indicators */}
-            <Link
-              href="/transfers"
+            {/* Notification Bell Button */}
+            <button
+              onClick={() => setIsNotificationDrawerOpen(true)}
               className="relative p-2 text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-xl transition"
-              title="Thông báo chờ xác nhận / quá hạn"
+              title="Thông báo mượn trả & quá hạn"
             >
               <Bell className="w-4 h-4" />
-              {(pendingTransfersCount > 0 || overdueAssetsCount > 0) && (
-                <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-rose-500 text-white text-[9px] font-bold flex items-center justify-center ring-2 ring-white">
-                  {pendingTransfersCount + overdueAssetsCount}
+              {unreadNotificationsCount > 0 && (
+                <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-rose-500 text-white text-[9px] font-bold flex items-center justify-center ring-2 ring-white animate-pulse">
+                  {unreadNotificationsCount}
                 </span>
               )}
-            </Link>
+            </button>
 
             {/* Role & User Switcher for Testing/Demo */}
             <div className="relative">
@@ -208,7 +222,18 @@ export const Navbar: React.FC = () => {
                     })}
                   </div>
 
-                  <div className="pt-2 border-t border-slate-100">
+                  <div className="pt-2 border-t border-slate-100 space-y-1">
+                    <button
+                      onClick={() => {
+                        setIsUserMenuOpen(false);
+                        setIsInstallModalOpen(true);
+                      }}
+                      className="w-full py-1.5 px-2 text-slate-700 hover:bg-slate-100 rounded-xl text-[11px] font-bold flex items-center gap-2 transition"
+                    >
+                      <Smartphone className="w-3.5 h-3.5 text-orange-600" />
+                      <span>Cài đặt App vào điện thoại</span>
+                    </button>
+
                     <button
                       onClick={() => {
                         if (confirm('Khôi phục dữ liệu mẫu ban đầu của Mắt Một Mí Media?')) {
@@ -229,7 +254,7 @@ export const Navbar: React.FC = () => {
         </div>
       </header>
 
-      {/* Mobile Bottom Navigation Bar (Super clean, simple) */}
+      {/* Mobile Bottom Navigation Bar */}
       <div className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-lg border-t border-slate-200 px-2 py-1.5 flex items-center justify-around no-print shadow-lg">
         {navLinks.map(link => {
           const Icon = link.icon;
@@ -273,6 +298,19 @@ export const Navbar: React.FC = () => {
         onClose={() => setIsScannerOpen(false)}
         onScanSuccess={handleScanSuccess}
         assets={assets}
+      />
+
+      {/* Install App Modal */}
+      <InstallAppModal
+        isOpen={isInstallModalOpen}
+        onClose={() => setIsInstallModalOpen(false)}
+      />
+
+      {/* Notifications Drawer */}
+      <NotificationDrawer
+        isOpen={isNotificationDrawerOpen}
+        onClose={() => setIsNotificationDrawerOpen(false)}
+        onOpenInstallModal={() => setIsInstallModalOpen(true)}
       />
     </>
   );
