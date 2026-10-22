@@ -1,7 +1,7 @@
 import { google } from 'googleapis';
 import path from 'path';
 import fs from 'fs';
-import { Asset, UserProfile, TransferRecord, AuditItem } from '@/types';
+import { Asset, UserProfile, TransferRecord, AuditItem, AuditSession } from '@/types';
 
 export const SPREADSHEET_ID = 
   process.env.GOOGLE_SHEET_ID || 
@@ -177,29 +177,80 @@ export async function fetchAllFromSheets() {
   // Parse MUON_TRA
   const transfers: TransferRecord[] = (transfersRes.data.values || [])
     .filter(row => row[0] && row[0].toString().trim() !== '')
+    .map((row, idx) => {
+      const fromName = row[3] || '';
+      const toName = row[4] || '';
+      const fromUser = profiles.find(p => p.full_name.trim().toLowerCase() === fromName.trim().toLowerCase() || p.full_name.includes(fromName));
+      const toUser = profiles.find(p => p.full_name.trim().toLowerCase() === toName.trim().toLowerCase() || p.full_name.includes(toName));
+
+      return {
+        id: row[0] || `tr-${idx + 1}`,
+        asset_id: `ast-${row[1]}`,
+        asset_code: row[1] || '',
+        asset_name: row[2] || '',
+        from_user_id: fromUser ? fromUser.id : (fromName ? `u-${fromName}` : 'u-admin-1'),
+        from_user_name: fromName,
+        to_user_id: toUser ? toUser.id : (toName ? `u-${toName}` : 'u-staff-1'),
+        to_user_name: toName,
+        transfer_type: (row[5] || 'peer_transfer') as any,
+        status: (row[6] || 'completed') as any,
+        due_date: row[7] || null,
+        location_after: row[8] || 'Kho Studio',
+        giver_notes: row[9] || '',
+        giver_photos: row[10] ? row[10].split('; ').filter(Boolean) : [],
+        receiver_notes: row[11] || '',
+        receiver_photos: row[12] ? row[12].split('; ').filter(Boolean) : [],
+        created_at: row[13] || new Date().toISOString(),
+        confirmed_at: row[14] || null,
+        rejection_reason: row[15] || null,
+      };
+    });
+
+  // Parse KIEM_KE
+  const auditItems: AuditItem[] = (auditRes.data.values || [])
+    .filter(row => row[0] && row[0].toString().trim() !== '')
     .map((row, idx) => ({
-      id: row[0] || `tr-${idx + 1}`,
-      asset_id: `ast-${row[1]}`,
-      asset_code: row[1] || '',
-      asset_name: row[2] || '',
-      from_user_id: 'from-id',
-      from_user_name: row[3] || '',
-      to_user_id: 'to-id',
-      to_user_name: row[4] || '',
-      transfer_type: (row[5] || 'peer_transfer') as any,
-      status: (row[6] || 'completed') as any,
-      due_date: row[7] || null,
-      location_after: row[8] || 'Kho Studio',
-      giver_notes: row[9] || '',
-      giver_photos: row[10] ? row[10].split('; ').filter(Boolean) : [],
-      receiver_notes: row[11] || '',
-      receiver_photos: row[12] ? row[12].split('; ').filter(Boolean) : [],
-      created_at: row[13] || new Date().toISOString(),
-      confirmed_at: row[14] || null,
-      rejection_reason: row[15] || null,
+      id: `ai-${idx + 1}`,
+      session_id: row[0] || 'aud-session-1',
+      asset_id: `ast-${row[2]}`,
+      asset_code: row[2] || '',
+      asset_name: row[3] || '',
+      scanned_at: row[4] || new Date().toISOString(),
+      scanned_by_id: 'u-admin-1',
+      scanned_by_name: row[5] || 'Nguyễn Hùng (Admin)',
+      expected_location: row[6] || 'Kho Studio Tầng 1',
+      actual_location: row[7] || 'Kho Studio Tầng 1',
+      expected_holder_id: null,
+      expected_holder_name: row[8] || 'Kho',
+      actual_holder_id: null,
+      actual_holder_name: row[9] || 'Kho',
+      expected_status: 'available',
+      actual_status: (row[10] || 'available') as any,
+      has_discrepancy: (row[11] || '').toUpperCase().includes('SAI LỆCH'),
+      discrepancy_details: row[12] || '',
+      notes: '',
     }));
 
-  return { assets, profiles, transfers };
+  // Reconstruct unique auditSessions from KIEM_KE
+  const sessionMap = new Map<string, AuditSession>();
+  (auditRes.data.values || []).forEach(row => {
+    const sId = row[0];
+    const sTitle = row[1] || 'Đợt kiểm kê thiết bị';
+    if (sId && !sessionMap.has(sId)) {
+      sessionMap.set(sId, {
+        id: sId,
+        title: sTitle,
+        created_by_id: 'u-admin-1',
+        created_by_name: row[5] || 'Nguyễn Hùng (Admin)',
+        status: 'in_progress',
+        created_at: row[4] || new Date().toISOString(),
+      });
+    }
+  });
+
+  const auditSessions = Array.from(sessionMap.values());
+
+  return { assets, profiles, transfers, auditItems, auditSessions };
 }
 
 // ==========================================
@@ -374,6 +425,15 @@ export async function appendTransferToSheet(transfer: TransferRecord) {
   const sheets = getSheetsClient();
   if (!sheets) throw new Error('Google Sheets chưa sẵn sàng');
 
+  // Sanitize photos to prevent Google Sheets 50,000 character limit
+  const giverPhotos = (transfer.giver_photos || [])
+    .map((p, i) => (p && (p.startsWith('http://') || p.startsWith('https://'))) ? p : `[Ảnh bàn giao #${i + 1}]`)
+    .join('; ');
+
+  const receiverPhotos = (transfer.receiver_photos || [])
+    .map((p, i) => (p && (p.startsWith('http://') || p.startsWith('https://'))) ? p : `[Ảnh xác nhận #${i + 1}]`)
+    .join('; ');
+
   const row = [
     transfer.id,
     transfer.asset_code,
@@ -385,9 +445,9 @@ export async function appendTransferToSheet(transfer: TransferRecord) {
     transfer.due_date || '',
     transfer.location_after || '',
     transfer.giver_notes || '',
-    (transfer.giver_photos || []).join('; '),
+    giverPhotos,
     transfer.receiver_notes || '',
-    (transfer.receiver_photos || []).join('; '),
+    receiverPhotos,
     transfer.created_at,
     transfer.confirmed_at || '',
     transfer.rejection_reason || '',
@@ -417,6 +477,10 @@ export async function updateTransferInSheet(transferId: string, updates: Partial
   const actualRow = rowIndex + 2;
   const existingRow = rows[rowIndex];
 
+  const receiverPhotos = updates.receiver_photos !== undefined
+    ? updates.receiver_photos.map((p, i) => (p && (p.startsWith('http://') || p.startsWith('https://'))) ? p : `[Ảnh nhận #${i + 1}]`).join('; ')
+    : existingRow[12];
+
   const newRow = [
     existingRow[0],
     existingRow[1],
@@ -430,7 +494,7 @@ export async function updateTransferInSheet(transferId: string, updates: Partial
     existingRow[9],
     existingRow[10],
     updates.receiver_notes !== undefined ? updates.receiver_notes : existingRow[11],
-    updates.receiver_photos !== undefined ? updates.receiver_photos.join('; ') : existingRow[12],
+    receiverPhotos,
     existingRow[13],
     updates.confirmed_at !== undefined ? updates.confirmed_at : existingRow[14],
     updates.rejection_reason !== undefined ? updates.rejection_reason : existingRow[15],

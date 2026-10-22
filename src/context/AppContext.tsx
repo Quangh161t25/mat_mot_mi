@@ -176,6 +176,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           if (json.data.transfers && json.data.transfers.length > 0) {
             setTransfers(json.data.transfers);
           }
+          if (json.data.auditItems && json.data.auditItems.length > 0) {
+            setAuditItems(json.data.auditItems);
+          }
+          if (json.data.auditSessions && json.data.auditSessions.length > 0) {
+            setAuditSessions(json.data.auditSessions);
+          }
         }
         setGoogleSheetsStatus('connected');
         setGoogleSheetsError(null);
@@ -475,8 +481,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       url: '/transfers',
     });
 
-    // Ghi đồng bộ sang Google Sheets
-    dispatchToSheets('append_transfer', { transfer: newTransfer });
+    // Ghi đồng bộ sang Google Sheets (tối ưu kích thước payload ảnh)
+    const transferPayload = {
+      ...newTransfer,
+      giver_photos: (newTransfer.giver_photos || []).map((p, i) => 
+        (p && (p.startsWith('http://') || p.startsWith('https://'))) ? p : `[Ảnh bàn giao #${i + 1}]`
+      ),
+    };
+    dispatchToSheets('append_transfer', { transfer: transferPayload });
 
     return { success: true };
   };
@@ -563,14 +575,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       url: '/transfers',
     });
 
-    // Cập nhật giao dịch trên Google Sheets
+    // Cập nhật giao dịch trên Google Sheets (tối ưu kích thước payload ảnh)
+    const receiverPhotosPayload = (receiverPhotos || []).map((p, i) => 
+      (p && (p.startsWith('http://') || p.startsWith('https://'))) ? p : `[Ảnh nhận #${i + 1}]`
+    );
+
     dispatchToSheets('update_transfer', {
       transferId,
       updates: {
         status: 'completed',
         confirmed_at: now,
         receiver_notes: receiverNotes || '',
-        receiver_photos: receiverPhotos || [],
+        receiver_photos: receiverPhotosPayload,
       }
     });
 
