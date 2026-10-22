@@ -22,6 +22,13 @@ export function normalizePrivateKey(rawKey: string): string {
     cleanKey = cleanKey.slice(1, -1);
   }
 
+  // Handle underscore replacements in BEGIN / END headers (crucial if browser/editor autocorrected spaces to underscores)
+  cleanKey = cleanKey
+    .replace(/BEGIN_PRIVATE_KEY/gi, 'BEGIN PRIVATE KEY')
+    .replace(/END_PRIVATE_KEY/gi, 'END PRIVATE KEY')
+    .replace(/BEGIN[-_ ]+RSA[-_ ]+PRIVATE[-_ ]+KEY/gi, 'BEGIN RSA PRIVATE KEY')
+    .replace(/END[-_ ]+RSA[-_ ]+PRIVATE[-_ ]+KEY/gi, 'END RSA PRIVATE KEY');
+
   // Handle various newline escapes: \r\n, \r, \\n, \n
   cleanKey = cleanKey
     .replace(/\\r\\n/g, '\n')
