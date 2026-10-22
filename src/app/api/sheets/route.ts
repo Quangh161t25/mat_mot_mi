@@ -14,21 +14,32 @@ import {
   getGoogleAuthDiagnostics
 } from '@/lib/google-sheets';
 
-// Chặn toàn bộ bộ nhớ đệm (Cache) trên Vercel và Next.js để dữ liệu luôn luôn là mới nhất từ Google Sheets
+// Cấu hình không cache và timeout 30s cho Vercel Serverless
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 export const fetchCache = 'force-no-store';
+export const maxDuration = 30;
+
+const corsAndNoCacheHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, Pragma, Cache-Control',
+  'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0',
+  'Pragma': 'no-cache',
+  'Expires': '0',
+  'Surrogate-Control': 'no-store',
+};
+
+export async function OPTIONS() {
+  return new NextResponse(null, {
+    status: 200,
+    headers: corsAndNoCacheHeaders,
+  });
+}
 
 export async function GET() {
-  const noCacheHeaders = {
-    'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0',
-    'Pragma': 'no-cache',
-    'Expires': '0',
-    'Surrogate-Control': 'no-store',
-  };
-
+  const diag = getGoogleAuthDiagnostics();
   try {
-    const diag = getGoogleAuthDiagnostics();
     const sheets = getSheetsClient();
     
     if (!sheets) {
@@ -40,7 +51,7 @@ export async function GET() {
         error: 'Chưa cấu hình tài khoản Google Service Account trên server/Vercel.',
       }, { 
         status: 200,
-        headers: noCacheHeaders
+        headers: corsAndNoCacheHeaders
       });
     }
 
@@ -52,20 +63,25 @@ export async function GET() {
       diagnostics: diag,
       data,
     }, {
-      headers: noCacheHeaders
+      headers: corsAndNoCacheHeaders
     });
   } catch (err: any) {
     console.error('API Google Sheets GET error:', err);
-    const diag = getGoogleAuthDiagnostics();
+    const isQuota = err.message && (err.message.includes('Quota exceeded') || err.message.includes('rateLimitExceeded'));
+    
+    // Nếu Google tạm thời nghẽn Quota theo phút, trả về mã 200 kèm cảnh báo nhẹ để không làm crash frontend
     return NextResponse.json({
-      success: false,
-      connected: false,
+      success: isQuota ? true : false,
+      connected: isQuota ? true : false,
+      isQuotaThrottled: isQuota,
       spreadsheetId: SPREADSHEET_ID,
       diagnostics: diag,
-      error: err.message || 'Lỗi đọc dữ liệu Google Sheets',
+      error: isQuota 
+        ? 'Google Sheets tạm thời bận do nhiều lượt truy cập cùng lúc. Đang tự động kết nối lại...' 
+        : (err.message || 'Lỗi đọc dữ liệu Google Sheets'),
     }, { 
-      status: 500,
-      headers: noCacheHeaders
+      status: isQuota ? 200 : 500,
+      headers: corsAndNoCacheHeaders
     });
   }
 }
@@ -82,45 +98,47 @@ export async function POST(req: Request) {
         success: false, 
         diagnostics: diag,
         error: 'Google Sheets chưa sẵn sàng. Vui lòng kiểm tra biến môi trường trên Vercel.' 
-      }, { status: 500 });
+      }, { 
+        status: 500,
+        headers: corsAndNoCacheHeaders
+      });
     }
 
     switch (action) {
       // 1. Quản lý thiết bị
       case 'append_asset':
         await appendAssetToSheet(payload.asset);
-        return NextResponse.json({ success: true });
+        return NextResponse.json({ success: true }, { headers: corsAndNoCacheHeaders });
 
       case 'update_asset':
         await updateAssetInSheet(payload.code, payload.updates);
-        return NextResponse.json({ success: true });
+        return NextResponse.json({ success: true }, { headers: corsAndNoCacheHeaders });
 
       case 'delete_asset':
         await deleteAssetInSheet(payload.code);
-        return NextResponse.json({ success: true });
+        return NextResponse.json({ success: true }, { headers: corsAndNoCacheHeaders });
 
       // 2. Quản lý nhân sự
       case 'append_staff':
         await appendStaffToSheet(payload.profile);
-        return NextResponse.json({ success: true });
+        return NextResponse.json({ success: true }, { headers: corsAndNoCacheHeaders });
 
       case 'update_staff':
         await updateStaffInSheet(payload.id, payload.updates);
-        return NextResponse.json({ success: true });
+        return NextResponse.json({ success: true }, { headers: corsAndNoCacheHeaders });
 
       // 3. Mượn trả
       case 'append_transfer':
         await appendTransferToSheet(payload.transfer);
-        // Đồng thời cập nhật trạng thái thiết bị sang pending_transfer
         await updateAssetInSheet(payload.transfer.asset_code, {
           status: 'pending_transfer',
           location: payload.transfer.location_after || undefined,
         });
-        return NextResponse.json({ success: true });
+        return NextResponse.json({ success: true }, { headers: corsAndNoCacheHeaders });
 
       case 'update_transfer':
         await updateTransferInSheet(payload.transferId, payload.updates);
-        return NextResponse.json({ success: true });
+        return NextResponse.json({ success: true }, { headers: corsAndNoCacheHeaders });
 
       // Cập nhật trạng thái thiết bị sau khi bàn giao xong hoặc xử lý sự cố
       case 'update_asset_status':
@@ -131,21 +149,30 @@ export async function POST(req: Request) {
           due_date: payload.dueDate || null,
           alert_reason: payload.alertReason || null,
         });
-        return NextResponse.json({ success: true });
+        return NextResponse.json({ success: true }, { headers: corsAndNoCacheHeaders });
 
       // 4. Kiểm kê
       case 'append_audit':
         await appendAuditToSheet(payload.item, payload.sessionTitle || 'Kiểm kê');
-        return NextResponse.json({ success: true });
+        return NextResponse.json({ success: true }, { headers: corsAndNoCacheHeaders });
 
       default:
-        return NextResponse.json({ success: false, error: `Action '${action}' không được hỗ trợ` }, { status: 400 });
+        return NextResponse.json({ 
+          success: false, 
+          error: `Action '${action}' không được hỗ trợ` 
+        }, { 
+          status: 400,
+          headers: corsAndNoCacheHeaders
+        });
     }
   } catch (err: any) {
     console.error('API Google Sheets POST error:', err);
     return NextResponse.json({
       success: false,
       error: err.message || 'Lỗi ghi dữ liệu Google Sheets',
-    }, { status: 500 });
+    }, { 
+      status: 500,
+      headers: corsAndNoCacheHeaders
+    });
   }
 }

@@ -116,141 +116,180 @@ export function getSheetsClient() {
   return google.sheets({ version: 'v4', auth });
 }
 
+// In-memory cache để tiết kiệm Quota Google Sheets (Google cho phép tối đa 60 read/phút)
+let cachedData: {
+  assets: Asset[];
+  profiles: UserProfile[];
+  transfers: TransferRecord[];
+  auditItems: AuditItem[];
+  auditSessions: AuditSession[];
+} | null = null;
+let lastFetchTimestamp = 0;
+const CACHE_TTL_MS = 8000; // 8 giây cache bộ nhớ đệm máy chủ
+
+export function invalidateSheetsCache() {
+  cachedData = null;
+  lastFetchTimestamp = 0;
+}
+
 // ==========================================
-// 1. ĐỌC TOÀN BỘ DỮ LIỆU TỪ GOOGLE SHEETS
+// 1. ĐỌC TOÀN BỘ DỮ LIỆU TỪ GOOGLE SHEETS (Dùng batchGet - 1 request duy nhất)
 // ==========================================
-export async function fetchAllFromSheets() {
+export async function fetchAllFromSheets(forceRefresh = false) {
+  const now = Date.now();
+  if (!forceRefresh && cachedData && (now - lastFetchTimestamp < CACHE_TTL_MS)) {
+    return cachedData;
+  }
+
   const sheets = getSheetsClient();
   if (!sheets) {
+    if (cachedData) return cachedData;
     const diag = getGoogleAuthDiagnostics();
     throw new Error(
       `Chưa tìm thấy thông tin xác thực Google Service Account. (File: ${diag.hasFile}, JSON Env: ${diag.hasJsonEnv}, Email Env: ${diag.hasEmailEnv}, Key Env: ${diag.hasKeyEnv})`
     );
   }
 
-  // Đọc đồng thời cả 4 sheet
-  const [assetsRes, staffRes, transfersRes, auditRes] = await Promise.all([
-    sheets.spreadsheets.values.get({ spreadsheetId: SPREADSHEET_ID, range: 'THIET_BI!A2:N1000' }),
-    sheets.spreadsheets.values.get({ spreadsheetId: SPREADSHEET_ID, range: 'NHAN_SU!A2:H1000' }),
-    sheets.spreadsheets.values.get({ spreadsheetId: SPREADSHEET_ID, range: 'MUON_TRA!A2:P1000' }),
-    sheets.spreadsheets.values.get({ spreadsheetId: SPREADSHEET_ID, range: 'KIEM_KE!A2:M1000' }),
-  ]);
-
-  // Parse THIET_BI
-  const assets: Asset[] = (assetsRes.data.values || [])
-    .filter(row => row[0] && row[0].toString().trim() !== '')
-    .map((row, idx) => ({
-      id: `ast-${idx + 1}`,
-      code: (row[0] || '').toString().trim(),
-      name: row[1] || 'Thiết bị',
-      category: (row[2] || 'camera') as any,
-      model: row[3] || '',
-      serial_number: row[4] || '',
-      location: row[5] || 'Kho Studio Tầng 1',
-      manager_id: 'u-mgr-1',
-      manager_name: row[6] || 'Quản lý kho',
-      current_holder_id: row[7] ? 'holder-id' : null,
-      current_holder_name: row[7] || null,
-      status: (row[8] || 'available') as any,
-      alert_reason: (row[9] || null) as any,
-      due_date: row[10] || null,
-      notes: row[11] || '',
-      image_url: row[12] || 'https://images.unsplash.com/photo-1516035069371-29a1b244cc32?w=600',
-      created_at: row[13] || new Date().toISOString(),
-      updated_at: row[13] || new Date().toISOString(),
-    }));
-
-  // Parse NHAN_SU
-  const profiles: UserProfile[] = (staffRes.data.values || [])
-    .filter(row => row[0] && row[0].toString().trim() !== '')
-    .map((row, idx) => ({
-      id: row[0] || `u-${idx + 1}`,
-      full_name: row[1] || 'Nhân sự',
-      email: row[2] || 'staff@matmotmi.vn',
-      phone: row[3] || '',
-      role: (row[4] || 'staff') as any,
-      status: (row[5] || 'active') as any,
-      avatar_url: row[6] || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150',
-      created_at: row[7] || new Date().toISOString(),
-    }));
-
-  // Parse MUON_TRA
-  const transfers: TransferRecord[] = (transfersRes.data.values || [])
-    .filter(row => row[0] && row[0].toString().trim() !== '')
-    .map((row, idx) => {
-      const fromName = row[3] || '';
-      const toName = row[4] || '';
-      const fromUser = profiles.find(p => p.full_name.trim().toLowerCase() === fromName.trim().toLowerCase() || p.full_name.includes(fromName));
-      const toUser = profiles.find(p => p.full_name.trim().toLowerCase() === toName.trim().toLowerCase() || p.full_name.includes(toName));
-
-      return {
-        id: row[0] || `tr-${idx + 1}`,
-        asset_id: `ast-${row[1]}`,
-        asset_code: row[1] || '',
-        asset_name: row[2] || '',
-        from_user_id: fromUser ? fromUser.id : (fromName ? `u-${fromName}` : 'u-admin-1'),
-        from_user_name: fromName,
-        to_user_id: toUser ? toUser.id : (toName ? `u-${toName}` : 'u-staff-1'),
-        to_user_name: toName,
-        transfer_type: (row[5] || 'peer_transfer') as any,
-        status: (row[6] || 'completed') as any,
-        due_date: row[7] || null,
-        location_after: row[8] || 'Kho Studio',
-        giver_notes: row[9] || '',
-        giver_photos: row[10] ? row[10].split('; ').filter(Boolean) : [],
-        receiver_notes: row[11] || '',
-        receiver_photos: row[12] ? row[12].split('; ').filter(Boolean) : [],
-        created_at: row[13] || new Date().toISOString(),
-        confirmed_at: row[14] || null,
-        rejection_reason: row[15] || null,
-      };
+  try {
+    // Sử dụng batchGet gộp 4 Sheet thành 1 request duy nhất để không bao giờ vượt Quota của Google
+    const batchRes = await sheets.spreadsheets.values.batchGet({
+      spreadsheetId: SPREADSHEET_ID,
+      ranges: [
+        'THIET_BI!A2:N1000',
+        'NHAN_SU!A2:H1000',
+        'MUON_TRA!A2:P1000',
+        'KIEM_KE!A2:M1000',
+      ],
     });
 
-  // Parse KIEM_KE
-  const auditItems: AuditItem[] = (auditRes.data.values || [])
-    .filter(row => row[0] && row[0].toString().trim() !== '')
-    .map((row, idx) => ({
-      id: `ai-${idx + 1}`,
-      session_id: row[0] || 'aud-session-1',
-      asset_id: `ast-${row[2]}`,
-      asset_code: row[2] || '',
-      asset_name: row[3] || '',
-      scanned_at: row[4] || new Date().toISOString(),
-      scanned_by_id: 'u-admin-1',
-      scanned_by_name: row[5] || 'Nguyễn Hùng (Admin)',
-      expected_location: row[6] || 'Kho Studio Tầng 1',
-      actual_location: row[7] || 'Kho Studio Tầng 1',
-      expected_holder_id: null,
-      expected_holder_name: row[8] || 'Kho',
-      actual_holder_id: null,
-      actual_holder_name: row[9] || 'Kho',
-      expected_status: 'available',
-      actual_status: (row[10] || 'available') as any,
-      has_discrepancy: (row[11] || '').toUpperCase().includes('SAI LỆCH'),
-      discrepancy_details: row[12] || '',
-      notes: '',
-    }));
+    const [assetsRange, staffRange, transfersRange, auditRange] = batchRes.data.valueRanges || [];
 
-  // Reconstruct unique auditSessions from KIEM_KE
-  const sessionMap = new Map<string, AuditSession>();
-  (auditRes.data.values || []).forEach(row => {
-    const sId = row[0];
-    const sTitle = row[1] || 'Đợt kiểm kê thiết bị';
-    if (sId && !sessionMap.has(sId)) {
-      sessionMap.set(sId, {
-        id: sId,
-        title: sTitle,
-        created_by_id: 'u-admin-1',
-        created_by_name: row[5] || 'Nguyễn Hùng (Admin)',
-        status: 'in_progress',
-        created_at: row[4] || new Date().toISOString(),
+    // Parse THIET_BI
+    const assets: Asset[] = (assetsRange?.values || [])
+      .filter(row => row[0] && row[0].toString().trim() !== '')
+      .map((row, idx) => ({
+        id: `ast-${idx + 1}`,
+        code: (row[0] || '').toString().trim(),
+        name: row[1] || 'Thiết bị',
+        category: (row[2] || 'camera') as any,
+        model: row[3] || '',
+        serial_number: row[4] || '',
+        location: row[5] || 'Kho Studio Tầng 1',
+        manager_id: 'u-mgr-1',
+        manager_name: row[6] || 'Quản lý kho',
+        current_holder_id: row[7] ? 'holder-id' : null,
+        current_holder_name: row[7] || null,
+        status: (row[8] || 'available') as any,
+        alert_reason: (row[9] || null) as any,
+        due_date: row[10] || null,
+        notes: row[11] || '',
+        image_url: row[12] || 'https://images.unsplash.com/photo-1516035069371-29a1b244cc32?w=600',
+        created_at: row[13] || new Date().toISOString(),
+        updated_at: row[13] || new Date().toISOString(),
+      }));
+
+    // Parse NHAN_SU
+    const profiles: UserProfile[] = (staffRange?.values || [])
+      .filter(row => row[0] && row[0].toString().trim() !== '')
+      .map((row, idx) => ({
+        id: row[0] || `u-${idx + 1}`,
+        full_name: row[1] || 'Nhân sự',
+        email: row[2] || 'staff@matmotmi.vn',
+        phone: row[3] || '',
+        role: (row[4] || 'staff') as any,
+        status: (row[5] || 'active') as any,
+        avatar_url: row[6] || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150',
+        created_at: row[7] || new Date().toISOString(),
+      }));
+
+    // Parse MUON_TRA
+    const transfers: TransferRecord[] = (transfersRange?.values || [])
+      .filter(row => row[0] && row[0].toString().trim() !== '')
+      .map((row, idx) => {
+        const fromName = row[3] || '';
+        const toName = row[4] || '';
+        const fromUser = profiles.find(p => p.full_name.trim().toLowerCase() === fromName.trim().toLowerCase() || p.full_name.includes(fromName));
+        const toUser = profiles.find(p => p.full_name.trim().toLowerCase() === toName.trim().toLowerCase() || p.full_name.includes(toName));
+
+        return {
+          id: row[0] || `tr-${idx + 1}`,
+          asset_id: `ast-${row[1]}`,
+          asset_code: row[1] || '',
+          asset_name: row[2] || '',
+          from_user_id: fromUser ? fromUser.id : (fromName ? `u-${fromName}` : 'u-admin-1'),
+          from_user_name: fromName,
+          to_user_id: toUser ? toUser.id : (toName ? `u-${toName}` : 'u-staff-1'),
+          to_user_name: toName,
+          transfer_type: (row[5] || 'peer_transfer') as any,
+          status: (row[6] || 'completed') as any,
+          due_date: row[7] || null,
+          location_after: row[8] || 'Kho Studio',
+          giver_notes: row[9] || '',
+          giver_photos: row[10] ? row[10].split('; ').filter(Boolean) : [],
+          receiver_notes: row[11] || '',
+          receiver_photos: row[12] ? row[12].split('; ').filter(Boolean) : [],
+          created_at: row[13] || new Date().toISOString(),
+          confirmed_at: row[14] || null,
+          rejection_reason: row[15] || null,
+        };
       });
+
+    // Parse KIEM_KE
+    const auditItems: AuditItem[] = (auditRange?.values || [])
+      .filter(row => row[0] && row[0].toString().trim() !== '')
+      .map((row, idx) => ({
+        id: `ai-${idx + 1}`,
+        session_id: row[0] || 'aud-session-1',
+        asset_id: `ast-${row[2]}`,
+        asset_code: row[2] || '',
+        asset_name: row[3] || '',
+        scanned_at: row[4] || new Date().toISOString(),
+        scanned_by_id: 'u-admin-1',
+        scanned_by_name: row[5] || 'Nguyễn Hùng (Admin)',
+        expected_location: row[6] || 'Kho Studio Tầng 1',
+        actual_location: row[7] || 'Kho Studio Tầng 1',
+        expected_holder_id: null,
+        expected_holder_name: row[8] || 'Kho',
+        actual_holder_id: null,
+        actual_holder_name: row[9] || 'Kho',
+        expected_status: 'available',
+        actual_status: (row[10] || 'available') as any,
+        has_discrepancy: (row[11] || '').toUpperCase().includes('SAI LỆCH'),
+        discrepancy_details: row[12] || '',
+        notes: '',
+      }));
+
+    // Reconstruct unique auditSessions from KIEM_KE
+    const sessionMap = new Map<string, AuditSession>();
+    (auditRange?.values || []).forEach(row => {
+      const sId = row[0];
+      const sTitle = row[1] || 'Đợt kiểm kê thiết bị';
+      if (sId && !sessionMap.has(sId)) {
+        sessionMap.set(sId, {
+          id: sId,
+          title: sTitle,
+          created_by_id: 'u-admin-1',
+          created_by_name: row[5] || 'Nguyễn Hùng (Admin)',
+          status: 'in_progress',
+          created_at: row[4] || new Date().toISOString(),
+        });
+      }
+    });
+
+    const auditSessions = Array.from(sessionMap.values());
+
+    const result = { assets, profiles, transfers, auditItems, auditSessions };
+    cachedData = result;
+    lastFetchTimestamp = Date.now();
+    return result;
+  } catch (err: any) {
+    // Nếu Google tạm thời nghẽn Quota (429), trả về dữ liệu bộ nhớ đệm gần nhất
+    if (cachedData) {
+      console.warn('Google Sheets tạm thời nghẽn Quota, trả về dữ liệu bộ nhớ đệm an toàn.');
+      return cachedData;
     }
-  });
-
-  const auditSessions = Array.from(sessionMap.values());
-
-  return { assets, profiles, transfers, auditItems, auditSessions };
+    throw err;
+  }
 }
 
 // ==========================================
@@ -258,6 +297,7 @@ export async function fetchAllFromSheets() {
 // ==========================================
 
 export async function appendAssetToSheet(asset: Asset) {
+  invalidateSheetsCache();
   const sheets = getSheetsClient();
   if (!sheets) throw new Error('Google Sheets chưa sẵn sàng');
 
@@ -287,6 +327,7 @@ export async function appendAssetToSheet(asset: Asset) {
 }
 
 export async function updateAssetInSheet(code: string, updates: Partial<Asset>) {
+  invalidateSheetsCache();
   const sheets = getSheetsClient();
   if (!sheets) throw new Error('Google Sheets chưa sẵn sàng');
 
@@ -332,6 +373,7 @@ export async function updateAssetInSheet(code: string, updates: Partial<Asset>) 
 }
 
 export async function deleteAssetInSheet(code: string) {
+  invalidateSheetsCache();
   const sheets = getSheetsClient();
   if (!sheets) throw new Error('Google Sheets chưa sẵn sàng');
 
@@ -360,6 +402,7 @@ export async function deleteAssetInSheet(code: string) {
 // ==========================================
 
 export async function appendStaffToSheet(profile: UserProfile) {
+  invalidateSheetsCache();
   const sheets = getSheetsClient();
   if (!sheets) throw new Error('Google Sheets chưa sẵn sàng');
 
@@ -383,6 +426,7 @@ export async function appendStaffToSheet(profile: UserProfile) {
 }
 
 export async function updateStaffInSheet(id: string, updates: Partial<UserProfile>) {
+  invalidateSheetsCache();
   const sheets = getSheetsClient();
   if (!sheets) throw new Error('Google Sheets chưa sẵn sàng');
 
@@ -422,6 +466,7 @@ export async function updateStaffInSheet(id: string, updates: Partial<UserProfil
 // ==========================================
 
 export async function appendTransferToSheet(transfer: TransferRecord) {
+  invalidateSheetsCache();
   const sheets = getSheetsClient();
   if (!sheets) throw new Error('Google Sheets chưa sẵn sàng');
 
@@ -462,6 +507,7 @@ export async function appendTransferToSheet(transfer: TransferRecord) {
 }
 
 export async function updateTransferInSheet(transferId: string, updates: Partial<TransferRecord>) {
+  invalidateSheetsCache();
   const sheets = getSheetsClient();
   if (!sheets) throw new Error('Google Sheets chưa sẵn sàng');
 
@@ -513,6 +559,7 @@ export async function updateTransferInSheet(transferId: string, updates: Partial
 // ==========================================
 
 export async function appendAuditToSheet(item: AuditItem, sessionTitle: string) {
+  invalidateSheetsCache();
   const sheets = getSheetsClient();
   if (!sheets) throw new Error('Google Sheets chưa sẵn sàng');
 
