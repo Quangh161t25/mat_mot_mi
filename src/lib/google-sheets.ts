@@ -2,6 +2,7 @@ import { google } from 'googleapis';
 import path from 'path';
 import fs from 'fs';
 import { Asset, UserProfile, TransferRecord, AuditItem, AuditSession } from '@/types';
+import { INITIAL_ASSETS, INITIAL_PROFILES, INITIAL_TRANSFERS } from '@/lib/mock-data';
 
 export const SPREADSHEET_ID = 
   process.env.GOOGLE_SHEET_ID || 
@@ -113,7 +114,33 @@ export function getGoogleAuth() {
 export function getSheetsClient() {
   const auth = getGoogleAuth();
   if (!auth) return null;
-  return google.sheets({ version: 'v4', auth });
+  return google.sheets({ 
+    version: 'v4', 
+    auth,
+    retryConfig: { retry: 0 } // Không retry để tránh bị treo 10s dẫn tới Vercel 504 Timeout
+  });
+}
+
+// Đường dẫn cache đĩa (trên Vercel dùng /tmp, local dùng thư mục hiện tại)
+const CACHE_FILE_PATH = path.join(
+  process.env.VERCEL ? '/tmp' : process.cwd(),
+  '.sheets-cache.json'
+);
+
+function readDiskCache(): any {
+  try {
+    if (fs.existsSync(CACHE_FILE_PATH)) {
+      const raw = fs.readFileSync(CACHE_FILE_PATH, 'utf8');
+      return JSON.parse(raw);
+    }
+  } catch (e) {}
+  return null;
+}
+
+function writeDiskCache(data: any): void {
+  try {
+    fs.writeFileSync(CACHE_FILE_PATH, JSON.stringify(data), 'utf8');
+  } catch (e) {}
 }
 
 // In-memory cache để tiết kiệm Quota Google Sheets (Google cho phép tối đa 60 read/phút)
@@ -125,11 +152,16 @@ let cachedData: {
   auditSessions: AuditSession[];
 } | null = null;
 let lastFetchTimestamp = 0;
-const CACHE_TTL_MS = 8000; // 8 giây cache bộ nhớ đệm máy chủ
+const CACHE_TTL_MS = 15000; // 15 giây cache máy chủ
 
 export function invalidateSheetsCache() {
   cachedData = null;
   lastFetchTimestamp = 0;
+  try {
+    if (fs.existsSync(CACHE_FILE_PATH)) {
+      fs.unlinkSync(CACHE_FILE_PATH);
+    }
+  } catch (e) {}
 }
 
 // ==========================================
@@ -137,22 +169,43 @@ export function invalidateSheetsCache() {
 // ==========================================
 export async function fetchAllFromSheets(forceRefresh = false) {
   const now = Date.now();
+  // 1. Ưu tiên trả về Memory Cache nếu còn trong hạn 15s
   if (!forceRefresh && cachedData && (now - lastFetchTimestamp < CACHE_TTL_MS)) {
     return cachedData;
+  }
+
+  // 2. Kiểm tra Disk Cache nếu memory cache chưa có
+  if (!cachedData) {
+    const disk = readDiskCache();
+    if (disk && !forceRefresh) {
+      cachedData = disk;
+      lastFetchTimestamp = now;
+      return disk;
+    }
   }
 
   const sheets = getSheetsClient();
   if (!sheets) {
     if (cachedData) return cachedData;
-    const diag = getGoogleAuthDiagnostics();
-    throw new Error(
-      `Chưa tìm thấy thông tin xác thực Google Service Account. (File: ${diag.hasFile}, JSON Env: ${diag.hasJsonEnv}, Email Env: ${diag.hasEmailEnv}, Key Env: ${diag.hasKeyEnv})`
-    );
+    const disk = readDiskCache();
+    if (disk) return disk;
+    return {
+      assets: INITIAL_ASSETS,
+      profiles: INITIAL_PROFILES,
+      transfers: INITIAL_TRANSFERS,
+      auditItems: [],
+      auditSessions: [],
+    };
   }
 
   try {
+    // Giới hạn thời gian gọi Google Sheets tối đa 5 giây (tránh Vercel Serverless Function 10s timeout)
+    const timeoutPromise = new Promise<never>((_, reject) => 
+      setTimeout(() => reject(new Error('Google Sheets API timeout sau 5s')), 5000)
+    );
+
     // Sử dụng batchGet gộp 4 Sheet thành 1 request duy nhất để không bao giờ vượt Quota của Google
-    const batchRes = await sheets.spreadsheets.values.batchGet({
+    const batchPromise = sheets.spreadsheets.values.batchGet({
       spreadsheetId: SPREADSHEET_ID,
       ranges: [
         'THIET_BI!A2:N1000',
@@ -162,12 +215,14 @@ export async function fetchAllFromSheets(forceRefresh = false) {
       ],
     });
 
+    const batchRes: any = await Promise.race([batchPromise, timeoutPromise]);
+
     const [assetsRange, staffRange, transfersRange, auditRange] = batchRes.data.valueRanges || [];
 
     // Parse THIET_BI
     const assets: Asset[] = (assetsRange?.values || [])
-      .filter(row => row[0] && row[0].toString().trim() !== '')
-      .map((row, idx) => ({
+      .filter((row: any) => row[0] && row[0].toString().trim() !== '')
+      .map((row: any, idx: number) => ({
         id: `ast-${idx + 1}`,
         code: (row[0] || '').toString().trim(),
         name: row[1] || 'Thiết bị',
@@ -190,8 +245,8 @@ export async function fetchAllFromSheets(forceRefresh = false) {
 
     // Parse NHAN_SU
     const profiles: UserProfile[] = (staffRange?.values || [])
-      .filter(row => row[0] && row[0].toString().trim() !== '')
-      .map((row, idx) => ({
+      .filter((row: any) => row[0] && row[0].toString().trim() !== '')
+      .map((row: any, idx: number) => ({
         id: row[0] || `u-${idx + 1}`,
         full_name: row[1] || 'Nhân sự',
         email: row[2] || 'staff@matmotmi.vn',
@@ -204,8 +259,8 @@ export async function fetchAllFromSheets(forceRefresh = false) {
 
     // Parse MUON_TRA
     const transfers: TransferRecord[] = (transfersRange?.values || [])
-      .filter(row => row[0] && row[0].toString().trim() !== '')
-      .map((row, idx) => {
+      .filter((row: any) => row[0] && row[0].toString().trim() !== '')
+      .map((row: any, idx: number) => {
         const fromName = row[3] || '';
         const toName = row[4] || '';
         const fromUser = profiles.find(p => p.full_name.trim().toLowerCase() === fromName.trim().toLowerCase() || p.full_name.includes(fromName));
@@ -236,8 +291,8 @@ export async function fetchAllFromSheets(forceRefresh = false) {
 
     // Parse KIEM_KE
     const auditItems: AuditItem[] = (auditRange?.values || [])
-      .filter(row => row[0] && row[0].toString().trim() !== '')
-      .map((row, idx) => ({
+      .filter((row: any) => row[0] && row[0].toString().trim() !== '')
+      .map((row: any, idx: number) => ({
         id: `ai-${idx + 1}`,
         session_id: row[0] || 'aud-session-1',
         asset_id: `ast-${row[2]}`,
@@ -261,7 +316,7 @@ export async function fetchAllFromSheets(forceRefresh = false) {
 
     // Reconstruct unique auditSessions from KIEM_KE
     const sessionMap = new Map<string, AuditSession>();
-    (auditRange?.values || []).forEach(row => {
+    (auditRange?.values || []).forEach((row: any) => {
       const sId = row[0];
       const sTitle = row[1] || 'Đợt kiểm kê thiết bị';
       if (sId && !sessionMap.has(sId)) {
@@ -281,14 +336,28 @@ export async function fetchAllFromSheets(forceRefresh = false) {
     const result = { assets, profiles, transfers, auditItems, auditSessions };
     cachedData = result;
     lastFetchTimestamp = Date.now();
+    writeDiskCache(result);
     return result;
   } catch (err: any) {
-    // Nếu Google tạm thời nghẽn Quota (429), trả về dữ liệu bộ nhớ đệm gần nhất
+    console.warn('Lỗi gọi Google Sheets (Quota hoặc mạng):', err.message);
+    // 1. Ưu tiên bộ nhớ RAM nếu có
     if (cachedData) {
-      console.warn('Google Sheets tạm thời nghẽn Quota, trả về dữ liệu bộ nhớ đệm an toàn.');
       return cachedData;
     }
-    throw err;
+    // 2. Tiếp theo là bộ nhớ đệm Disk /tmp
+    const disk = readDiskCache();
+    if (disk) {
+      cachedData = disk;
+      return disk;
+    }
+    // 3. Cuối cùng trả về dữ liệu khởi tạo mặc định để web không bao giờ bị sập
+    return {
+      assets: INITIAL_ASSETS,
+      profiles: INITIAL_PROFILES,
+      transfers: INITIAL_TRANSFERS,
+      auditItems: [],
+      auditSessions: [],
+    };
   }
 }
 

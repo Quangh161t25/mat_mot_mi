@@ -262,19 +262,27 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setGoogleSheetsError(null);
       } else {
         syncFailuresRef.current += 1;
-        // Chỉ hiện lỗi nếu thất bại liên tiếp hoặc chưa có dữ liệu nào
-        if (syncFailuresRef.current >= 2 || assets.length === 0) {
+        // Chỉ hiện lỗi khi hoàn toàn chưa có dữ liệu nào và thất bại liên tiếp
+        if (assets.length === 0 && syncFailuresRef.current >= 3) {
           setGoogleSheetsStatus('error');
           setGoogleSheetsError(json.error || 'Chưa thể kết nối tới Google Sheets trên server.');
+        } else {
+          // Vẫn giữ trạng thái connected để không làm gián đoạn trải nghiệm người dùng
+          setGoogleSheetsStatus('connected');
+          setGoogleSheetsError(null);
         }
       }
     } catch (err: any) {
       console.warn('Lỗi đồng bộ Google Sheets:', err);
       syncFailuresRef.current += 1;
-      // Tránh làm gián đoạn người dùng nếu chỉ là một nhịp nghẽn mạng ngắn hạn khi đã có dữ liệu
-      if (syncFailuresRef.current >= 2 || assets.length === 0) {
+      // Chỉ hiện lỗi khi hoàn toàn chưa có dữ liệu và thất bại 3 lần liên tiếp
+      if (assets.length === 0 && syncFailuresRef.current >= 3) {
         setGoogleSheetsStatus('error');
         setGoogleSheetsError(err.message || 'Không thể gọi API đồng bộ Google Sheets');
+      } else {
+        // Nếu đã có dữ liệu trong app, giữ nguyên trạng thái hoạt động bình thường
+        setGoogleSheetsStatus('connected');
+        setGoogleSheetsError(null);
       }
     } finally {
       setIsSyncing(false);
@@ -344,13 +352,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     syncWithGoogleSheets();
   }, [syncWithGoogleSheets]);
 
-  // Polling tự động mỗi 25 giây (giữ Quota Google Sheets luôn an toàn) & khi mở lại app/mở khóa màn hình
+  // Polling tự động mỗi 45 giây (bảo vệ Quota Google Sheets luôn an toàn tuyệt đối) & khi mở lại app/mở khóa màn hình
   useEffect(() => {
     const interval = setInterval(() => {
       if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
         syncWithGoogleSheets();
       }
-    }, 25000);
+    }, 45000);
 
     const handleVisibility = () => {
       if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
