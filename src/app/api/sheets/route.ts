@@ -1,24 +1,50 @@
 import { NextResponse } from 'next/server';
 import { 
   fetchAllFromSheets, 
+  appendAssetToSheet,
+  updateAssetInSheet,
+  deleteAssetInSheet,
+  appendStaffToSheet,
+  updateStaffInSheet,
   appendTransferToSheet, 
+  updateTransferInSheet,
   appendAuditToSheet, 
   SPREADSHEET_ID, 
-  getSheetsClient 
+  getSheetsClient,
+  getGoogleAuthDiagnostics
 } from '@/lib/google-sheets';
 
 export async function GET() {
   try {
+    const diag = getGoogleAuthDiagnostics();
+    const sheets = getSheetsClient();
+    
+    if (!sheets) {
+      return NextResponse.json({
+        success: false,
+        connected: false,
+        spreadsheetId: SPREADSHEET_ID,
+        diagnostics: diag,
+        error: 'Chưa cấu hình tài khoản Google Service Account trên server/Vercel.',
+      }, { status: 200 }); // Return 200 with connected: false so client can handle gracefully
+    }
+
     const data = await fetchAllFromSheets();
     return NextResponse.json({
       success: true,
+      connected: true,
       spreadsheetId: SPREADSHEET_ID,
+      diagnostics: diag,
       data,
     });
   } catch (err: any) {
     console.error('API Google Sheets GET error:', err);
+    const diag = getGoogleAuthDiagnostics();
     return NextResponse.json({
       success: false,
+      connected: false,
+      spreadsheetId: SPREADSHEET_ID,
+      diagnostics: diag,
       error: err.message || 'Lỗi đọc dữ liệu Google Sheets',
     }, { status: 500 });
   }
@@ -31,45 +57,70 @@ export async function POST(req: Request) {
 
     const sheets = getSheetsClient();
     if (!sheets) {
-      return NextResponse.json({ success: false, error: 'Google Sheets chưa sẵn sàng' }, { status: 500 });
+      const diag = getGoogleAuthDiagnostics();
+      return NextResponse.json({ 
+        success: false, 
+        diagnostics: diag,
+        error: 'Google Sheets chưa sẵn sàng. Vui lòng kiểm tra biến môi trường trên Vercel.' 
+      }, { status: 500 });
     }
 
-    if (action === 'append_transfer') {
-      await appendTransferToSheet(payload.transfer);
-      return NextResponse.json({ success: true });
-    }
+    switch (action) {
+      // 1. Quản lý thiết bị
+      case 'append_asset':
+        await appendAssetToSheet(payload.asset);
+        return NextResponse.json({ success: true });
 
-    if (action === 'append_audit') {
-      await appendAuditToSheet(payload.item, payload.sessionTitle || 'Kiểm kê');
-      return NextResponse.json({ success: true });
-    }
+      case 'update_asset':
+        await updateAssetInSheet(payload.code, payload.updates);
+        return NextResponse.json({ success: true });
 
-    if (action === 'update_asset_status') {
-      // Find row matching asset_code in THIET_BI and update status & holder
-      const { assetCode, status, holderName, location } = payload;
-      const res = await sheets.spreadsheets.values.get({
-        spreadsheetId: SPREADSHEET_ID,
-        range: 'THIET_BI!A2:A1000',
-      });
-      const rows = res.data.values || [];
-      const rowIndex = rows.findIndex(r => r[0]?.toString().trim().toUpperCase() === assetCode.trim().toUpperCase());
+      case 'delete_asset':
+        await deleteAssetInSheet(payload.code);
+        return NextResponse.json({ success: true });
 
-      if (rowIndex !== -1) {
-        const actualRow = rowIndex + 2; // offset by header
-        await sheets.spreadsheets.values.update({
-          spreadsheetId: SPREADSHEET_ID,
-          range: `THIET_BI!F${actualRow}:I${actualRow}`,
-          valueInputOption: 'USER_ENTERED',
-          requestBody: {
-            values: [[location, '', holderName || '', status]]
-          }
+      // 2. Quản lý nhân sự
+      case 'append_staff':
+        await appendStaffToSheet(payload.profile);
+        return NextResponse.json({ success: true });
+
+      case 'update_staff':
+        await updateStaffInSheet(payload.id, payload.updates);
+        return NextResponse.json({ success: true });
+
+      // 3. Mượn trả
+      case 'append_transfer':
+        await appendTransferToSheet(payload.transfer);
+        // Đồng thời cập nhật trạng thái thiết bị sang pending_transfer
+        await updateAssetInSheet(payload.transfer.asset_code, {
+          status: 'pending_transfer',
+          location: payload.transfer.location_after || undefined,
         });
-      }
+        return NextResponse.json({ success: true });
 
-      return NextResponse.json({ success: true });
+      case 'update_transfer':
+        await updateTransferInSheet(payload.transferId, payload.updates);
+        return NextResponse.json({ success: true });
+
+      // Cập nhật trạng thái thiết bị sau khi bàn giao xong hoặc xử lý sự cố
+      case 'update_asset_status':
+        await updateAssetInSheet(payload.assetCode, {
+          status: payload.status,
+          current_holder_name: payload.holderName,
+          location: payload.location,
+          due_date: payload.dueDate || null,
+          alert_reason: payload.alertReason || null,
+        });
+        return NextResponse.json({ success: true });
+
+      // 4. Kiểm kê
+      case 'append_audit':
+        await appendAuditToSheet(payload.item, payload.sessionTitle || 'Kiểm kê');
+        return NextResponse.json({ success: true });
+
+      default:
+        return NextResponse.json({ success: false, error: `Action '${action}' không được hỗ trợ` }, { status: 400 });
     }
-
-    return NextResponse.json({ success: false, error: 'Action không hợp lệ' }, { status: 400 });
   } catch (err: any) {
     console.error('API Google Sheets POST error:', err);
     return NextResponse.json({

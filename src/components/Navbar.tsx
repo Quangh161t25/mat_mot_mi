@@ -31,6 +31,11 @@ export const Navbar: React.FC = () => {
     assets, 
     pendingTransfersCount, 
     unreadNotificationsCount,
+    googleSheetsStatus,
+    googleSheetsError,
+    googleSheetUrl,
+    isSyncing,
+    syncWithGoogleSheets,
     resetToDemoData 
   } = useApp();
 
@@ -106,6 +111,27 @@ export const Navbar: React.FC = () => {
 
           {/* Header Action Controls */}
           <div className="flex items-center gap-2 sm:gap-2.5">
+            {/* Google Sheets Sync Pill */}
+            <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-xs font-medium bg-slate-50 border-slate-200">
+              <span className={`w-2 h-2 rounded-full ${
+                googleSheetsStatus === 'connected' ? 'bg-emerald-500' :
+                googleSheetsStatus === 'loading' ? 'bg-amber-500 animate-pulse' :
+                'bg-rose-500'
+              }`} />
+              <span className="text-[11px] font-bold text-slate-700">
+                {googleSheetsStatus === 'connected' ? 'Sheets' :
+                 googleSheetsStatus === 'loading' ? 'Kết nối...' : 'Chưa lưu Sheets'}
+              </span>
+              <button
+                onClick={() => syncWithGoogleSheets()}
+                disabled={isSyncing}
+                title="Đồng bộ lại dữ liệu với Google Sheets"
+                className="p-1 hover:bg-slate-200 rounded-lg text-slate-500 hover:text-slate-800 transition"
+              >
+                <RotateCcw className={`w-3 h-3 ${isSyncing ? 'animate-spin text-orange-600' : ''}`} />
+              </button>
+            </div>
+
             {/* Install App on Phone button */}
             <button
               onClick={() => setIsInstallModalOpen(true)}
@@ -253,6 +279,35 @@ export const Navbar: React.FC = () => {
           </div>
         </div>
       </header>
+
+      {/* Google Sheets Connection Error Alert Banner */}
+      {googleSheetsStatus === 'error' && (
+        <div className="bg-amber-50 border-b border-amber-200 px-4 py-2 text-xs text-amber-900 flex flex-wrap items-center justify-between gap-2 no-print">
+          <div className="flex items-center gap-2">
+            <span className="w-2.5 h-2.5 rounded-full bg-rose-500 animate-pulse" />
+            <span>
+              <strong>Google Sheets chưa đồng bộ:</strong> {googleSheetsError || 'Chưa nhận biến môi trường trên Vercel.'}
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <button 
+              onClick={() => syncWithGoogleSheets()}
+              disabled={isSyncing}
+              className="px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-lg transition text-xs shadow-sm"
+            >
+              {isSyncing ? 'Đang thử lại...' : 'Thử kết nối lại'}
+            </button>
+            <a 
+              href={googleSheetUrl}
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="underline text-amber-800 hover:text-amber-950 font-semibold text-xs"
+            >
+              Mở Google Sheet
+            </a>
+          </div>
+        </div>
+      )}
 
       {/* Mobile Bottom Navigation Bar */}
       <div className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-lg border-t border-slate-200 px-2 py-1.5 flex items-center justify-around no-print shadow-lg">

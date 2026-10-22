@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { 
   UserProfile, 
   Asset, 
@@ -38,7 +38,10 @@ interface AppContextType {
   notifications: AppNotification[];
   isConfiguredWithSupabase: boolean;
   isGoogleSheetsConnected: boolean;
+  googleSheetsStatus: 'loading' | 'connected' | 'error';
+  googleSheetsError: string | null;
   googleSheetUrl: string;
+  isSyncing: boolean;
   syncWithGoogleSheets: () => Promise<void>;
   
   // Permissions
@@ -125,16 +128,45 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [auditSessions, setAuditSessions] = useState<AuditSession[]>(INITIAL_AUDIT_SESSIONS);
   const [auditItems, setAuditItems] = useState<AuditItem[]>(INITIAL_AUDIT_ITEMS);
   const [notifications, setNotifications] = useState<AppNotification[]>(INITIAL_NOTIFICATIONS);
-  const [isGoogleSheetsConnected, setIsGoogleSheetsConnected] = useState(true);
+  
+  const [googleSheetsStatus, setGoogleSheetsStatus] = useState<'loading' | 'connected' | 'error'>('loading');
+  const [googleSheetsError, setGoogleSheetsError] = useState<string | null>(null);
+  const [isSyncing, setIsSyncing] = useState(false);
   const [isLoaded, setIsLoaded] = useState(false);
 
+  // Helper gửi request tới Google Sheets API
+  const dispatchToSheets = useCallback(async (action: string, payload: any) => {
+    try {
+      const res = await fetch('/api/sheets', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action, payload })
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        console.warn(`Lỗi ghi '${action}' sang Google Sheets:`, data.error);
+        setGoogleSheetsStatus('error');
+        setGoogleSheetsError(data.error || 'Lỗi ghi dữ liệu Google Sheets');
+      } else {
+        setGoogleSheetsStatus('connected');
+        setGoogleSheetsError(null);
+      }
+    } catch (err: any) {
+      console.warn(`Lỗi mạng khi ghi '${action}' sang Google Sheets:`, err);
+      setGoogleSheetsStatus('error');
+      setGoogleSheetsError(err.message || 'Lỗi kết nối API Google Sheets');
+    }
+  }, []);
+
   // Sync from Google Sheets
-  const syncWithGoogleSheets = async () => {
+  const syncWithGoogleSheets = useCallback(async () => {
+    setIsSyncing(true);
     try {
       const res = await fetch('/api/sheets');
-      if (res.ok) {
-        const json = await res.json();
-        if (json.success && json.data) {
+      const json = await res.json();
+      
+      if (res.ok && json.success && json.connected) {
+        if (json.data) {
           if (json.data.assets && json.data.assets.length > 0) {
             setAssets(json.data.assets);
           }
@@ -144,13 +176,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           if (json.data.transfers && json.data.transfers.length > 0) {
             setTransfers(json.data.transfers);
           }
-          setIsGoogleSheetsConnected(true);
         }
+        setGoogleSheetsStatus('connected');
+        setGoogleSheetsError(null);
+      } else {
+        setGoogleSheetsStatus('error');
+        setGoogleSheetsError(json.error || 'Chưa thể kết nối tới Google Sheets trên server.');
       }
-    } catch (err) {
+    } catch (err: any) {
       console.warn('Lỗi đồng bộ Google Sheets:', err);
+      setGoogleSheetsStatus('error');
+      setGoogleSheetsError(err.message || 'Không thể gọi API đồng bộ Google Sheets');
+    } finally {
+      setIsSyncing(false);
     }
-  };
+  }, []);
 
   // Load from localStorage on mount & Register Service Worker & Sync Google Sheets
   useEffect(() => {
@@ -187,7 +227,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     // Sync with Google Sheets in background
     syncWithGoogleSheets();
-  }, []);
+  }, [syncWithGoogleSheets]);
 
   // Save to localStorage when state changes
   useEffect(() => {
@@ -219,6 +259,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       created_at: new Date().toISOString(),
     };
     setProfiles(prev => [profile, ...prev]);
+
+    // Ghi sang Google Sheets
+    dispatchToSheets('append_staff', { profile });
   };
 
   const updateProfile = (id: string, updates: Partial<UserProfile>) => {
@@ -226,16 +269,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (currentUser.id === id) {
       setCurrentUser(prev => ({ ...prev, ...updates }));
     }
+
+    // Ghi sang Google Sheets
+    dispatchToSheets('update_staff', { id, updates });
   };
 
   const toggleProfileLock = (id: string) => {
+    const target = profiles.find(p => p.id === id);
+    if (!target) return;
+    const nextStatus = target.status === 'active' ? 'locked' : 'active';
+
     setProfiles(prev => prev.map(p => {
       if (p.id === id) {
-        const nextStatus = p.status === 'active' ? 'locked' : 'active';
         return { ...p, status: nextStatus };
       }
       return p;
     }));
+
+    // Ghi sang Google Sheets
+    dispatchToSheets('update_staff', { id, updates: { status: nextStatus } });
   };
 
   // 2. Quản lý tài sản
@@ -254,9 +306,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       updated_at: new Date().toISOString(),
     };
     setAssets(prev => [asset, ...prev]);
+
+    // Ghi sang Google Sheets
+    dispatchToSheets('append_asset', { asset });
   };
 
   const updateAsset = (id: string, updates: Partial<Asset>) => {
+    const targetAsset = assets.find(a => a.id === id);
+    if (!targetAsset) return;
+
     setAssets(prev => prev.map(a => {
       if (a.id === id) {
         const updated = { ...a, ...updates, updated_at: new Date().toISOString() };
@@ -272,28 +330,54 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
       return a;
     }));
+
+    // Ghi sang Google Sheets
+    dispatchToSheets('update_asset', { code: targetAsset.code, updates });
   };
 
   const deleteAsset = (id: string) => {
+    const targetAsset = assets.find(a => a.id === id);
+    if (!targetAsset) return;
+
     setAssets(prev => prev.filter(a => a.id !== id));
+
+    // Xóa trên Google Sheets
+    dispatchToSheets('delete_asset', { code: targetAsset.code });
   };
 
   const reportAssetIssue = (assetId: string, reason: AlertReason, notes?: string) => {
+    const asset = assets.find(a => a.id === assetId);
+    if (!asset) return;
+
+    const updatedNotes = notes ? `${asset.notes ? asset.notes + ' | ' : ''}Báo cáo: ${notes}` : asset.notes;
+
     setAssets(prev => prev.map(a => {
       if (a.id === assetId) {
         return {
           ...a,
           status: 'alert',
           alert_reason: reason,
-          notes: notes ? `${a.notes ? a.notes + ' | ' : ''}Báo cáo: ${notes}` : a.notes,
+          notes: updatedNotes,
           updated_at: new Date().toISOString(),
         };
       }
       return a;
     }));
+
+    // Cập nhật Google Sheets
+    dispatchToSheets('update_asset_status', {
+      assetCode: asset.code,
+      status: 'alert',
+      alertReason: reason,
+      location: asset.location,
+      holderName: asset.current_holder_name || '',
+    });
   };
 
   const resolveAssetIssue = (assetId: string, targetStatus: AssetStatus) => {
+    const asset = assets.find(a => a.id === assetId);
+    if (!asset) return;
+
     setAssets(prev => prev.map(a => {
       if (a.id === assetId) {
         return {
@@ -305,6 +389,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
       return a;
     }));
+
+    // Cập nhật Google Sheets
+    dispatchToSheets('update_asset_status', {
+      assetCode: asset.code,
+      status: targetStatus,
+      alertReason: null,
+      location: asset.location,
+      holderName: asset.current_holder_name || '',
+    });
   };
 
   // 4. Quy trình mượn - trả và BẮN THÔNG BÁO TỚI NGƯỜI NHẬN + GHI GOOGLE SHEETS
@@ -383,14 +476,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
 
     // Ghi đồng bộ sang Google Sheets
-    fetch('/api/sheets', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        action: 'append_transfer',
-        payload: { transfer: newTransfer }
-      })
-    }).catch(e => console.warn('Lỗi ghi transfer sang Google Sheets:', e));
+    dispatchToSheets('append_transfer', { transfer: newTransfer });
 
     return { success: true };
   };
@@ -439,14 +525,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const nextStatus: AssetStatus = isReturnedToInventory ? 'available' : 'in_use';
     const nextHolderId = isReturnedToInventory ? null : transfer.to_user_id;
     const nextHolder = nextHolderId ? profiles.find(p => p.id === nextHolderId) : null;
+    const nextDueDate = isReturnedToInventory ? null : transfer.due_date;
+    const nextLocation = transfer.location_after || 'Kho Studio';
 
     updateAsset(transfer.asset_id, {
       status: nextStatus,
       alert_reason: null,
       current_holder_id: nextHolderId,
       current_holder_name: nextHolder ? nextHolder.full_name : null,
-      location: transfer.location_after || 'Kho Studio',
-      due_date: isReturnedToInventory ? null : transfer.due_date,
+      location: nextLocation,
+      due_date: nextDueDate,
     });
 
     // 🔔 THÔNG BÁO CHO NGƯỜI GIAO RẰNG BÊN NHẬN ĐÃ XÁC NHẬN XONG
@@ -475,20 +563,26 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       url: '/transfers',
     });
 
+    // Cập nhật giao dịch trên Google Sheets
+    dispatchToSheets('update_transfer', {
+      transferId,
+      updates: {
+        status: 'completed',
+        confirmed_at: now,
+        receiver_notes: receiverNotes || '',
+        receiver_photos: receiverPhotos || [],
+      }
+    });
+
     // Cập nhật trạng thái máy trên Google Sheets sheet THIET_BI
-    fetch('/api/sheets', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        action: 'update_asset_status',
-        payload: {
-          assetCode: transfer.asset_code,
-          status: nextStatus,
-          holderName: nextHolder ? nextHolder.full_name : '',
-          location: transfer.location_after || 'Kho Studio',
-        }
-      })
-    }).catch(e => console.warn('Lỗi cập nhật thiết bị Google Sheets:', e));
+    dispatchToSheets('update_asset_status', {
+      assetCode: transfer.asset_code,
+      status: nextStatus,
+      holderName: nextHolder ? nextHolder.full_name : '',
+      location: nextLocation,
+      dueDate: nextDueDate,
+      alertReason: null,
+    });
 
     return { success: true };
   };
@@ -509,12 +603,31 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }));
 
     const asset = assets.find(a => a.id === transfer.asset_id);
+    const prevHolder = asset ? asset.current_holder_id : null;
+    const prevStatus: AssetStatus = prevHolder ? 'in_use' : 'available';
+
     if (asset) {
-      const prevHolder = asset.current_holder_id;
       updateAsset(asset.id, {
-        status: prevHolder ? 'in_use' : 'available',
+        status: prevStatus,
+      });
+
+      // Cập nhật Google Sheets
+      dispatchToSheets('update_asset_status', {
+        assetCode: asset.code,
+        status: prevStatus,
+        holderName: asset.current_holder_name || '',
+        location: asset.location,
       });
     }
+
+    // Cập nhật trạng thái giao dịch trên Google Sheets
+    dispatchToSheets('update_transfer', {
+      transferId,
+      updates: {
+        status: 'rejected',
+        rejection_reason: reason,
+      }
+    });
 
     return { success: true };
   };
@@ -595,17 +708,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     // Đồng bộ kiểm kê sang Google Sheets sheet KIEM_KE
     const session = auditSessions.find(s => s.id === params.sessionId);
-    fetch('/api/sheets', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        action: 'append_audit',
-        payload: {
-          item: newItem,
-          sessionTitle: session ? session.title : 'Kiểm kê thực tế'
-        }
-      })
-    }).catch(e => console.warn('Lỗi ghi audit sang Google Sheets:', e));
+    dispatchToSheets('append_audit', {
+      item: newItem,
+      sessionTitle: session ? session.title : 'Kiểm kê thực tế'
+    });
 
     return { success: true, item: newItem };
   };
@@ -678,6 +784,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return false;
   }).length;
 
+  const isGoogleSheetsConnected = googleSheetsStatus === 'connected';
+
   return (
     <AppContext.Provider
       value={{
@@ -691,7 +799,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         notifications,
         isConfiguredWithSupabase: isSupabaseConfigured(),
         isGoogleSheetsConnected,
+        googleSheetsStatus,
+        googleSheetsError,
         googleSheetUrl: GOOGLE_SHEET_URL,
+        isSyncing,
         syncWithGoogleSheets,
         
         isAdmin,
