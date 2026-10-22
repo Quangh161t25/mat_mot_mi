@@ -17,7 +17,7 @@ export const viewport: Viewport = {
   initialScale: 1,
   maximumScale: 1,
   userScalable: false,
-  themeColor: '#0B0F17',
+  themeColor: '#EA580C',
 };
 
 export default function RootLayout({
@@ -26,8 +26,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="vi" className="dark">
-      <body className={`${inter.className} bg-[#0B0F17] text-slate-100 antialiased min-h-screen flex flex-col`}>
+    <html lang="vi" className="light">
+      <body className={`${inter.className} bg-slate-50 text-slate-900 antialiased min-h-screen flex flex-col font-sans`}>
         <AppProvider>
           <Navbar />
           <main className="flex-1 pb-24 md:pb-12 max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 pt-4 sm:pt-6">

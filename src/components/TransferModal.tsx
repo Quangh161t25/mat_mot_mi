@@ -12,7 +12,6 @@ import {
   AlertTriangle, 
   Check, 
   User, 
-  Upload, 
   Trash2 
 } from 'lucide-react';
 
@@ -45,7 +44,6 @@ export const TransferModal: React.FC<TransferModalProps> = ({
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  // Sync preSelectedAsset when opened
   React.useEffect(() => {
     if (preSelectedAsset) {
       setSelectedAssetId(preSelectedAsset.id);
@@ -64,7 +62,6 @@ export const TransferModal: React.FC<TransferModalProps> = ({
 
   const currentSelectedAsset = assets.find(a => a.id === selectedAssetId);
 
-  // Filter available receivers (active profiles except currentUser unless special override)
   const availableReceivers = profiles.filter(
     p => p.status === 'active' && p.id !== currentUser.id
   );
@@ -129,26 +126,26 @@ export const TransferModal: React.FC<TransferModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/85 backdrop-blur-md overflow-y-auto">
-      <div className="bg-[#131B2E] border border-slate-800 rounded-3xl w-full max-w-xl overflow-hidden shadow-2xl flex flex-col my-auto">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-sm overflow-y-auto">
+      <div className="bg-white border border-slate-200 rounded-3xl w-full max-w-xl overflow-hidden shadow-2xl flex flex-col my-auto">
         {/* Modal Header */}
-        <div className="p-4 sm:p-5 border-b border-slate-800 flex items-center justify-between">
+        <div className="p-4 sm:p-5 border-b border-slate-100 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <div className="p-2 bg-orange-500/10 text-orange-400 rounded-xl">
+            <div className="p-2 bg-orange-100 text-orange-600 rounded-xl">
               <ArrowRightLeft className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="font-bold text-white text-base sm:text-lg">
-                Tạo Bàn Giao Thiết Bị (Mượn - Trả)
+              <h3 className="font-bold text-slate-900 text-base sm:text-lg">
+                Tạo Bàn Giao Thiết Bị
               </h3>
-              <p className="text-xs text-slate-400">
-                Xác nhận hai bên: Người trả không được tự xác nhận
+              <p className="text-xs text-slate-500">
+                Thao tác nhanh 3 bước • Xác nhận hai bên an toàn
               </p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="p-2 text-slate-400 hover:text-white rounded-xl hover:bg-slate-800/80 transition"
+            className="p-2 text-slate-400 hover:text-slate-700 rounded-xl hover:bg-slate-100 transition"
           >
             <X className="w-5 h-5" />
           </button>
@@ -157,16 +154,16 @@ export const TransferModal: React.FC<TransferModalProps> = ({
         {/* Modal Form */}
         <form onSubmit={handleSubmit} className="p-4 sm:p-6 space-y-4 max-h-[80vh] overflow-y-auto">
           {error && (
-            <div className="p-3 bg-rose-500/10 border border-rose-500/30 rounded-xl text-rose-400 text-xs flex items-center gap-2">
-              <AlertTriangle className="w-4 h-4 shrink-0" />
+            <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-rose-700 text-xs flex items-center gap-2 font-medium">
+              <AlertTriangle className="w-4 h-4 shrink-0 text-rose-600" />
               <span>{error}</span>
             </div>
           )}
 
           {/* 1. Chọn Thiết Bị */}
           <div>
-            <label className="text-xs font-semibold text-slate-300 block mb-1">
-              Thiết bị bàn giao <span className="text-orange-500">*</span>
+            <label className="text-xs font-bold text-slate-700 block mb-1">
+              1. Thiết bị bàn giao <span className="text-orange-600">*</span>
             </label>
             <select
               value={selectedAssetId}
@@ -175,10 +172,10 @@ export const TransferModal: React.FC<TransferModalProps> = ({
                 const asset = assets.find(a => a.id === e.target.value);
                 if (asset) setLocationAfter(asset.location);
               }}
-              className="w-full px-3 py-2.5 bg-slate-900 border border-slate-800 rounded-xl text-sm text-white focus:outline-none focus:border-orange-500"
+              className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 focus:outline-none focus:border-orange-500 focus:bg-white font-medium"
               required
             >
-              <option value="" disabled>-- Chọn thiết bị --</option>
+              <option value="" disabled>-- Chọn thiết bị trong studio --</option>
               {assets.map(a => (
                 <option 
                   key={a.id} 
@@ -202,10 +199,10 @@ export const TransferModal: React.FC<TransferModalProps> = ({
                 type="button"
                 key={item.type}
                 onClick={() => setTransferType(item.type as TransferType)}
-                className={`py-2 px-2 text-xs font-medium rounded-xl border text-center transition ${
+                className={`py-2 px-2 text-xs font-bold rounded-xl border text-center transition ${
                   transferType === item.type
-                    ? 'bg-orange-500/20 text-orange-400 border-orange-500/50'
-                    : 'bg-slate-900 text-slate-400 border-slate-800 hover:border-slate-700'
+                    ? 'bg-orange-600 text-white border-orange-600 shadow-sm'
+                    : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
                 }`}
               >
                 {item.label}
@@ -216,23 +213,23 @@ export const TransferModal: React.FC<TransferModalProps> = ({
           {/* Người giao & Người nhận */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label className="text-xs font-semibold text-slate-300 block mb-1">
+              <label className="text-xs font-bold text-slate-700 block mb-1">
                 Người giao (Bạn)
               </label>
-              <div className="flex items-center gap-2 p-2.5 bg-slate-900/60 border border-slate-800 rounded-xl text-xs text-slate-200">
-                <User className="w-4 h-4 text-orange-400 shrink-0" />
-                <span className="font-medium truncate">{currentUser.full_name}</span>
+              <div className="flex items-center gap-2 p-2.5 bg-slate-100 border border-slate-200 rounded-xl text-xs text-slate-800 font-semibold">
+                <User className="w-4 h-4 text-orange-600 shrink-0" />
+                <span className="truncate">{currentUser.full_name}</span>
               </div>
             </div>
 
             <div>
-              <label className="text-xs font-semibold text-slate-300 block mb-1">
-                Người nhận thiết bị <span className="text-orange-500">*</span>
+              <label className="text-xs font-bold text-slate-700 block mb-1">
+                2. Người nhận máy <span className="text-orange-600">*</span>
               </label>
               <select
                 value={toUserId}
                 onChange={e => setToUserId(e.target.value)}
-                className="w-full px-3 py-2.5 bg-slate-900 border border-slate-800 rounded-xl text-xs sm:text-sm text-white focus:outline-none focus:border-orange-500"
+                className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm text-slate-900 focus:outline-none focus:border-orange-500 focus:bg-white font-medium"
                 required
               >
                 <option value="">-- Chọn nhân sự nhận --</option>
@@ -248,53 +245,53 @@ export const TransferModal: React.FC<TransferModalProps> = ({
           {/* Vị trí mới & Hạn trả */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label className="text-xs font-semibold text-slate-300 block mb-1">
-                Vị trí sau khi giao
+              <label className="text-xs font-bold text-slate-700 block mb-1">
+                Vị trí sau khi bàn giao
               </label>
               <div className="relative">
-                <MapPin className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
+                <MapPin className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                 <input
                   type="text"
-                  placeholder="Ví dụ: Balo Đăng, Kho Tầng 1..."
+                  placeholder="VD: Cốp xe Đăng, Túi show..."
                   value={locationAfter}
                   onChange={e => setLocationAfter(e.target.value)}
-                  className="w-full pl-9 pr-3 py-2 bg-slate-900 border border-slate-800 rounded-xl text-xs sm:text-sm text-white placeholder-slate-500 focus:outline-none focus:border-orange-500"
+                  className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:border-orange-500 focus:bg-white"
                 />
               </div>
             </div>
 
             {transferType !== 'return' && (
               <div>
-                <label className="text-xs font-semibold text-slate-300 block mb-1">
+                <label className="text-xs font-bold text-slate-700 block mb-1">
                   Hạn trả dự kiến
                 </label>
                 <div className="relative">
-                  <Calendar className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <Calendar className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                   <input
                     type="date"
                     value={dueDate}
                     onChange={e => setDueDate(e.target.value)}
-                    className="w-full pl-9 pr-3 py-2 bg-slate-900 border border-slate-800 rounded-xl text-xs sm:text-sm text-white focus:outline-none focus:border-orange-500"
+                    className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm text-slate-900 focus:outline-none focus:border-orange-500 focus:bg-white"
                   />
                 </div>
               </div>
             )}
           </div>
 
-          {/* Chụp ảnh hiện trạng khi giao (Requirement 4) */}
+          {/* Chụp ảnh hiện trạng khi giao */}
           <div>
             <div className="flex items-center justify-between mb-1.5">
-              <label className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
-                <Camera className="w-4 h-4 text-orange-400" />
-                Chụp ảnh hiện trạng thiết bị khi giao
+              <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                <Camera className="w-4 h-4 text-orange-600" />
+                3. Ảnh chụp hiện trạng máy móc lúc giao
               </label>
-              <span className="text-[11px] text-slate-400">{photos.length} ảnh đã chụp</span>
+              <span className="text-[11px] text-slate-500 font-semibold">{photos.length} ảnh đã chụp</span>
             </div>
 
             {/* Photos Preview Grid */}
             <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 mb-2">
               {photos.map((url, idx) => (
-                <div key={idx} className="relative aspect-square rounded-xl overflow-hidden border border-slate-700 group">
+                <div key={idx} className="relative aspect-square rounded-xl overflow-hidden border border-slate-200 group shadow-sm">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img src={url} alt={`Hiện trạng ${idx + 1}`} className="w-full h-full object-cover" />
                   <button
@@ -310,10 +307,10 @@ export const TransferModal: React.FC<TransferModalProps> = ({
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
-                className="aspect-square rounded-xl border-2 border-dashed border-slate-700 hover:border-orange-500/60 bg-slate-900/40 hover:bg-orange-500/5 flex flex-col items-center justify-center gap-1 text-slate-400 hover:text-orange-400 transition"
+                className="aspect-square rounded-xl border-2 border-dashed border-slate-300 hover:border-orange-500 bg-slate-50 hover:bg-orange-50/50 flex flex-col items-center justify-center gap-1 text-slate-500 hover:text-orange-600 transition"
               >
                 <Camera className="w-5 h-5" />
-                <span className="text-[10px] font-medium">Chụp / Chọn ảnh</span>
+                <span className="text-[10px] font-bold">Chụp / Chọn ảnh</span>
               </button>
             </div>
 
@@ -330,45 +327,45 @@ export const TransferModal: React.FC<TransferModalProps> = ({
 
           {/* Ghi chú tình trạng thiết bị */}
           <div>
-            <label className="text-xs font-semibold text-slate-300 block mb-1">
-              Ghi chú hiện trạng (phụ kiện kèm theo, vết xước nếu có)
+            <label className="text-xs font-bold text-slate-700 block mb-1">
+              Ghi chú hiện trạng (phụ kiện kèm theo, số lượng pin)
             </label>
             <textarea
               rows={2}
               value={giverNotes}
               onChange={e => setGiverNotes(e.target.value)}
-              placeholder="Ví dụ: Máy sạch cảm biến, kèm 2 pin zin, sạc và thẻ nhớ..."
-              className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-xl text-xs sm:text-sm text-white placeholder-slate-500 focus:outline-none focus:border-orange-500"
+              placeholder="VD: Máy sạch đẹp, kèm 2 pin FZ100, 1 sạc đôi và thẻ nhớ..."
+              className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:border-orange-500 focus:bg-white"
             />
           </div>
 
           {/* Two-party warning */}
-          <div className="p-3 bg-orange-500/10 border border-orange-500/20 rounded-xl text-orange-300 text-xs flex items-start gap-2">
-            <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+          <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-900 text-xs flex items-start gap-2">
+            <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-amber-600" />
             <div>
-              <p className="font-semibold">Quy định xác nhận 2 bên:</p>
-              <p className="text-[11px] text-orange-200/80">
-                Sau khi gửi yêu cầu, thiết bị sẽ chuyển sang màu 🟠 Cam. Người nhận ({profiles.find(p => p.id === toUserId)?.full_name || '...'}) cần đăng nhập để xác nhận đã nhận thiết bị.
+              <p className="font-bold">Quy định xác nhận 2 bên:</p>
+              <p className="text-[11px] text-amber-800">
+                Sau khi gửi, thiết bị chuyển sang màu 🟠 Cam. Người nhận ({profiles.find(p => p.id === toUserId)?.full_name || '...'}) cần bấm duyệt để chính thức hoàn tất.
               </p>
             </div>
           </div>
 
           {/* Submit buttons */}
-          <div className="pt-2 flex items-center justify-end gap-3">
+          <div className="pt-2 flex items-center justify-end gap-3 border-t border-slate-100">
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2.5 rounded-xl text-xs font-medium text-slate-400 hover:text-white hover:bg-slate-800 transition"
+              className="px-4 py-2 text-xs font-semibold text-slate-500 hover:text-slate-800"
             >
               Hủy
             </button>
             <button
               type="submit"
               disabled={isSubmitting}
-              className="px-5 py-2.5 bg-orange-600 hover:bg-orange-500 disabled:opacity-50 text-white text-xs font-semibold rounded-xl shadow-lg shadow-orange-600/30 flex items-center gap-2 transition"
+              className="px-5 py-2.5 bg-orange-600 hover:bg-orange-500 disabled:opacity-50 text-white text-xs font-bold rounded-xl shadow-md shadow-orange-600/25 flex items-center gap-2 transition"
             >
               <Check className="w-4 h-4" />
-              {isSubmitting ? 'Đang tạo...' : 'Gửi yêu cầu bàn giao'}
+              {isSubmitting ? 'Đang gửi...' : 'Gửi yêu cầu bàn giao'}
             </button>
           </div>
         </form>

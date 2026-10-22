@@ -14,10 +14,8 @@ import {
   QrCode, 
   Bell, 
   ChevronDown, 
-  ShieldCheck, 
-  UserCheck, 
-  AlertTriangle,
-  RotateCcw
+  RotateCcw,
+  Sparkles
 } from 'lucide-react';
 import { QRScannerModal } from './QRScannerModal';
 
@@ -58,27 +56,25 @@ export const Navbar: React.FC = () => {
   return (
     <>
       {/* Top Header */}
-      <header className="sticky top-0 z-40 bg-[#0B0F17]/95 backdrop-blur-md border-b border-slate-800/80 px-4 lg:px-8 py-3 no-print">
+      <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-slate-200 px-4 lg:px-8 py-2.5 sm:py-3 no-print shadow-sm">
         <div className="max-w-7xl mx-auto flex items-center justify-between gap-4">
           {/* Logo & Studio Brand */}
-          <Link href="/" className="flex items-center gap-3 group">
-            <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-orange-600 via-amber-500 to-yellow-400 p-0.5 shadow-lg shadow-orange-500/20 group-hover:scale-105 transition">
-              <div className="w-full h-full bg-[#0B0F17] rounded-[14px] flex items-center justify-center">
-                <Camera className="w-5 h-5 text-orange-400" />
-              </div>
+          <Link href="/" className="flex items-center gap-2.5 sm:gap-3 group">
+            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-orange-600 flex items-center justify-center text-white shadow-md shadow-orange-600/30 group-hover:scale-105 transition">
+              <Camera className="w-5 h-5" />
             </div>
             <div>
-              <div className="text-base sm:text-lg font-black tracking-wider text-white flex items-center gap-1.5 font-mono">
-                MẮT MỘT MÍ <span className="text-orange-500">MEDIA</span>
+              <div className="text-base sm:text-lg font-black tracking-tight text-slate-900 flex items-center gap-1 font-mono">
+                MẮT MỘT MÍ <span className="text-orange-600">MEDIA</span>
               </div>
-              <div className="text-[10px] text-slate-400 font-medium tracking-wide">
-                Hệ thống Quản lý Thiết bị & Máy ảnh cưới
+              <div className="text-[10px] text-slate-500 font-medium tracking-wide hidden sm:block">
+                Quản lý thiết bị máy ảnh cưới thông minh
               </div>
             </div>
           </Link>
 
           {/* Desktop Navigation Links */}
-          <nav className="hidden md:flex items-center gap-1 bg-slate-900/60 p-1 rounded-2xl border border-slate-800/80">
+          <nav className="hidden md:flex items-center gap-1 bg-slate-100/80 p-1 rounded-2xl border border-slate-200/80">
             {navLinks.map(link => {
               const Icon = link.icon;
               const isActive = pathname === link.href || (link.href !== '/' && pathname.startsWith(link.href));
@@ -86,10 +82,10 @@ export const Navbar: React.FC = () => {
                 <Link
                   key={link.href}
                   href={link.href}
-                  className={`relative flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-semibold transition ${
+                  className={`relative flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition ${
                     isActive
-                      ? 'bg-orange-500 text-white shadow-md shadow-orange-500/20'
-                      : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+                      ? 'bg-orange-600 text-white shadow-sm shadow-orange-600/20'
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-white'
                   }`}
                 >
                   <Icon className="w-4 h-4" />
@@ -105,25 +101,25 @@ export const Navbar: React.FC = () => {
           </nav>
 
           {/* Header Action Controls */}
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-2 sm:gap-2.5">
             {/* Quick Scan QR Button */}
             <button
               onClick={() => setIsScannerOpen(true)}
-              className="flex items-center gap-1.5 px-3 py-2 bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-500 hover:to-amber-500 text-white text-xs font-bold rounded-xl shadow-md shadow-orange-600/20 transition active:scale-95"
+              className="flex items-center gap-1.5 px-3 sm:px-4 py-2 bg-orange-600 hover:bg-orange-500 text-white text-xs sm:text-sm font-bold rounded-xl shadow-md shadow-orange-600/25 transition active:scale-95"
             >
               <QrCode className="w-4 h-4" />
-              <span className="hidden sm:inline">Quét QR</span>
+              <span>Quét QR</span>
             </button>
 
             {/* Notification Indicators */}
             <Link
               href="/transfers"
-              className="relative p-2 text-slate-400 hover:text-white bg-slate-900 border border-slate-800 rounded-xl transition"
+              className="relative p-2 text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-xl transition"
               title="Thông báo chờ xác nhận / quá hạn"
             >
               <Bell className="w-4 h-4" />
               {(pendingTransfersCount > 0 || overdueAssetsCount > 0) && (
-                <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-rose-500 text-white text-[9px] font-bold flex items-center justify-center ring-2 ring-[#0B0F17]">
+                <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-rose-500 text-white text-[9px] font-bold flex items-center justify-center ring-2 ring-white">
                   {pendingTransfersCount + overdueAssetsCount}
                 </span>
               )}
@@ -133,7 +129,7 @@ export const Navbar: React.FC = () => {
             <div className="relative">
               <button
                 onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
-                className="flex items-center gap-2 p-1.5 sm:px-3 sm:py-1.5 bg-slate-900 border border-slate-800 hover:border-slate-700 rounded-xl transition"
+                className="flex items-center gap-2 p-1 sm:px-2.5 sm:py-1.5 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-xl transition"
               >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
@@ -142,31 +138,29 @@ export const Navbar: React.FC = () => {
                   className="w-7 h-7 rounded-lg object-cover ring-1 ring-orange-500/50"
                 />
                 <div className="text-left hidden lg:block">
-                  <div className="text-xs font-semibold text-white leading-tight flex items-center gap-1">
+                  <div className="text-xs font-bold text-slate-800 leading-tight flex items-center gap-1">
                     {currentUser?.full_name.split(' (')[0]}
-                    {currentUser?.role === 'admin' && (
-                      <span className="text-[10px] bg-red-500/20 text-red-400 px-1 py-0.2 rounded font-mono">Admin</span>
-                    )}
-                    {currentUser?.role === 'manager' && (
-                      <span className="text-[10px] bg-amber-500/20 text-amber-400 px-1 py-0.2 rounded font-mono">Quản lý</span>
-                    )}
-                  </div>
-                  <div className="text-[10px] text-slate-400">
-                    Đổi vai trò
+                    <span className={`text-[10px] px-1.5 py-0.2 rounded font-mono font-semibold ${
+                      currentUser?.role === 'admin' ? 'bg-rose-100 text-rose-700' :
+                      currentUser?.role === 'manager' ? 'bg-amber-100 text-amber-800' :
+                      'bg-blue-100 text-blue-700'
+                    }`}>
+                      {currentUser?.role === 'admin' ? 'Admin' : currentUser?.role === 'manager' ? 'Quản lý' : 'Nhân sự'}
+                    </span>
                   </div>
                 </div>
-                <ChevronDown className="w-3.5 h-3.5 text-slate-400 hidden sm:block" />
+                <ChevronDown className="w-3.5 h-3.5 text-slate-500 hidden sm:block" />
               </button>
 
               {/* User Dropdown Menu */}
               {isUserMenuOpen && (
-                <div className="absolute right-0 mt-2 w-72 bg-[#131B2E] border border-slate-800 rounded-2xl shadow-2xl p-2 z-50">
-                  <div className="p-2 border-b border-slate-800">
-                    <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
-                      Chuyển đổi tài khoản (Demo)
+                <div className="absolute right-0 mt-2 w-72 bg-white border border-slate-200 rounded-2xl shadow-xl p-2 z-50">
+                  <div className="p-2 border-b border-slate-100">
+                    <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                      Chọn vai trò trải nghiệm
                     </p>
-                    <p className="text-[10px] text-slate-500">
-                      Thử nghiệm phân quyền Admin, Quản lý và Nhân sự
+                    <p className="text-[10px] text-slate-400">
+                      Chuyển đổi giữa Admin, Quản lý và Nhân sự
                     </p>
                   </div>
 
@@ -182,8 +176,8 @@ export const Navbar: React.FC = () => {
                           }}
                           className={`w-full text-left p-2 rounded-xl text-xs flex items-center gap-2.5 transition ${
                             isCurrent
-                              ? 'bg-orange-500/20 text-orange-400 font-bold border border-orange-500/40'
-                              : 'text-slate-300 hover:bg-slate-800/80'
+                              ? 'bg-orange-50 text-orange-700 font-bold border border-orange-200'
+                              : 'text-slate-700 hover:bg-slate-50'
                           }`}
                         >
                           {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -193,18 +187,19 @@ export const Navbar: React.FC = () => {
                             className="w-7 h-7 rounded-lg object-cover"
                           />
                           <div className="flex-1 truncate">
-                            <div className="truncate font-medium">{p.full_name}</div>
-                            <div className="text-[10px] text-slate-400 flex items-center gap-1">
-                              <span>{p.email}</span>
-                              {p.status === 'locked' && (
-                                <span className="text-rose-400 font-bold">(Đã khóa)</span>
+                            <div className="truncate font-semibold">{p.full_name}</div>
+                            <div className="text-[10px] text-slate-400">
+                              {p.status === 'locked' ? (
+                                <span className="text-rose-600 font-bold">(Đã khóa)</span>
+                              ) : (
+                                p.email
                               )}
                             </div>
                           </div>
-                          <span className={`text-[10px] px-1.5 py-0.5 rounded font-mono ${
-                            p.role === 'admin' ? 'bg-red-500/20 text-red-300' :
-                            p.role === 'manager' ? 'bg-amber-500/20 text-amber-300' :
-                            'bg-blue-500/20 text-blue-300'
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded font-mono font-bold ${
+                            p.role === 'admin' ? 'bg-rose-100 text-rose-700' :
+                            p.role === 'manager' ? 'bg-amber-100 text-amber-800' :
+                            'bg-blue-100 text-blue-700'
                           }`}>
                             {p.role}
                           </span>
@@ -213,7 +208,7 @@ export const Navbar: React.FC = () => {
                     })}
                   </div>
 
-                  <div className="pt-2 border-t border-slate-800">
+                  <div className="pt-2 border-t border-slate-100">
                     <button
                       onClick={() => {
                         if (confirm('Khôi phục dữ liệu mẫu ban đầu của Mắt Một Mí Media?')) {
@@ -221,9 +216,9 @@ export const Navbar: React.FC = () => {
                           setIsUserMenuOpen(false);
                         }
                       }}
-                      className="w-full py-1.5 px-2 text-slate-400 hover:text-white hover:bg-slate-800/60 rounded-xl text-[11px] flex items-center gap-2 transition"
+                      className="w-full py-1.5 px-2 text-slate-500 hover:text-slate-800 hover:bg-slate-50 rounded-xl text-[11px] flex items-center gap-2 transition"
                     >
-                      <RotateCcw className="w-3.5 h-3.5 text-orange-400" />
+                      <RotateCcw className="w-3.5 h-3.5 text-orange-600" />
                       <span>Đặt lại dữ liệu mẫu Studio</span>
                     </button>
                   </div>
@@ -234,8 +229,8 @@ export const Navbar: React.FC = () => {
         </div>
       </header>
 
-      {/* Mobile Bottom Navigation Bar */}
-      <div className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-[#0B0F17]/95 backdrop-blur-lg border-t border-slate-800/80 px-2 py-1.5 flex items-center justify-around no-print">
+      {/* Mobile Bottom Navigation Bar (Super clean, simple) */}
+      <div className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-lg border-t border-slate-200 px-2 py-1.5 flex items-center justify-around no-print shadow-lg">
         {navLinks.map(link => {
           const Icon = link.icon;
           const isActive = pathname === link.href || (link.href !== '/' && pathname.startsWith(link.href));
@@ -244,7 +239,7 @@ export const Navbar: React.FC = () => {
               key={link.href}
               href={link.href}
               className={`relative flex flex-col items-center py-1 px-2.5 rounded-xl transition ${
-                isActive ? 'text-orange-400 font-bold' : 'text-slate-400 hover:text-white'
+                isActive ? 'text-orange-600 font-bold' : 'text-slate-500 hover:text-slate-900'
               }`}
             >
               <div className="relative">
@@ -260,15 +255,15 @@ export const Navbar: React.FC = () => {
           );
         })}
 
-        {/* Floating Scan button in center */}
+        {/* Center Prominent Scan Button */}
         <button
           onClick={() => setIsScannerOpen(true)}
-          className="flex flex-col items-center py-1 px-2.5 text-orange-400 hover:text-orange-300"
+          className="flex flex-col items-center py-1 px-2 text-orange-600 hover:text-orange-700"
         >
-          <div className="w-9 h-9 -mt-4 rounded-full bg-gradient-to-r from-orange-600 to-amber-500 flex items-center justify-center text-white shadow-lg shadow-orange-500/40">
+          <div className="w-10 h-10 -mt-5 rounded-full bg-orange-600 flex items-center justify-center text-white shadow-lg shadow-orange-600/40">
             <QrCode className="w-5 h-5" />
           </div>
-          <span className="text-[10px] mt-0.5 font-bold text-white">Quét QR</span>
+          <span className="text-[10px] mt-0.5 font-bold text-slate-800">Quét QR</span>
         </button>
       </div>
 

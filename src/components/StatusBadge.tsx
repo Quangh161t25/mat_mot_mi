@@ -16,15 +16,15 @@ export const StatusBadge: React.FC<StatusBadgeProps> = ({
   size = 'md',
 }) => {
   const sizeClasses = {
-    sm: 'text-xs px-2 py-0.5 gap-1',
-    md: 'text-xs md:text-sm px-2.5 py-1 gap-1.5',
-    lg: 'text-sm md:text-base px-3 py-1.5 gap-2 font-medium',
+    sm: 'text-xs px-2.5 py-0.5 gap-1 font-semibold',
+    md: 'text-xs md:text-sm px-3 py-1 gap-1.5 font-semibold',
+    lg: 'text-sm md:text-base px-3.5 py-1.5 gap-2 font-bold',
   };
 
   if (status === 'available') {
     return (
-      <span className={`inline-flex items-center rounded-full font-medium bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 ${sizeClasses[size]}`}>
-        {showIcon && <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />}
+      <span className={`inline-flex items-center rounded-full bg-emerald-50 text-emerald-700 border border-emerald-300 shadow-sm ${sizeClasses[size]}`}>
+        {showIcon && <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />}
         🟢 Sẵn sàng sử dụng
       </span>
     );
@@ -32,8 +32,8 @@ export const StatusBadge: React.FC<StatusBadgeProps> = ({
 
   if (status === 'in_use') {
     return (
-      <span className={`inline-flex items-center rounded-full font-medium bg-amber-500/15 text-amber-400 border border-amber-500/30 ${sizeClasses[size]}`}>
-        {showIcon && <span className="w-2 h-2 rounded-full bg-amber-400" />}
+      <span className={`inline-flex items-center rounded-full bg-amber-50 text-amber-800 border border-amber-300 shadow-sm ${sizeClasses[size]}`}>
+        {showIcon && <span className="w-2 h-2 rounded-full bg-amber-500" />}
         🟡 Đang có người giữ
       </span>
     );
@@ -41,8 +41,8 @@ export const StatusBadge: React.FC<StatusBadgeProps> = ({
 
   if (status === 'pending_transfer') {
     return (
-      <span className={`inline-flex items-center rounded-full font-medium bg-orange-500/15 text-orange-400 border border-orange-500/30 ${sizeClasses[size]}`}>
-        {showIcon && <Clock className="w-3.5 h-3.5 animate-spin text-orange-400" />}
+      <span className={`inline-flex items-center rounded-full bg-orange-50 text-orange-800 border border-orange-300 shadow-sm ${sizeClasses[size]}`}>
+        {showIcon && <Clock className="w-3.5 h-3.5 animate-spin text-orange-600" />}
         🟠 Chờ xác nhận giao/trả
       </span>
     );
@@ -64,8 +64,8 @@ export const StatusBadge: React.FC<StatusBadgeProps> = ({
   }
 
   return (
-    <span className={`inline-flex items-center rounded-full font-medium bg-rose-500/15 text-rose-400 border border-rose-500/30 ${sizeClasses[size]}`}>
-      {showIcon && <ReasonIcon className="w-3.5 h-3.5" />}
+    <span className={`inline-flex items-center rounded-full bg-rose-50 text-rose-700 border border-rose-300 shadow-sm ${sizeClasses[size]}`}>
+      {showIcon && <ReasonIcon className="w-3.5 h-3.5 text-rose-600" />}
       🔴 {reasonText}
     </span>
   );

@@ -50,9 +50,8 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
       }
     } catch (err: unknown) {
       console.warn('Không thể mở camera:', err);
-      const errorMsg = err instanceof Error ? err.message : 'Không thể kết nối máy ảnh';
       setCameraError(
-        'Không thể mở camera (có thể do quyền truy cập hoặc thiết bị không có camera). Bạn có thể tải ảnh chụp QR lên hoặc chọn mã thiết bị bên dưới.'
+        'Không thể mở camera (có thể do chưa cấp quyền hoặc thiết bị không có camera). Bạn có thể tải ảnh tem QR lên hoặc chọn mã thiết bị bên dưới.'
       );
       setIsScanning(false);
     }
@@ -102,7 +101,7 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
 
             if (code && code.data) {
               handleDetectedCode(code.data);
-              return; // Stop scan loop
+              return;
             }
           }
         }
@@ -120,7 +119,6 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
   }, [isScanning]);
 
   const handleDetectedCode = (rawData: string) => {
-    // If QR contains full URL (e.g. https://.../assets/MMM-CAM-001 or /assets/MMM-CAM-001)
     let extracted = rawData.trim();
     if (extracted.includes('/assets/')) {
       const parts = extracted.split('/assets/');
@@ -132,7 +130,7 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
     onClose();
   };
 
-  // Upload/snapshot image file fallback
+  // Upload file fallback
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -152,7 +150,7 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
           if (code && code.data) {
             handleDetectedCode(code.data);
           } else {
-            alert('Không tìm thấy mã QR hợp lệ trong ảnh này. Hãy thử lại hoặc nhập mã thiết bị!');
+            alert('Không tìm thấy mã QR hợp lệ trong ảnh này. Hãy thử lại hoặc chọn thiết bị bên dưới!');
           }
         }
       };
@@ -170,38 +168,38 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/85 backdrop-blur-md">
-      <div className="bg-[#131B2E] border border-slate-800 rounded-3xl w-full max-w-md overflow-hidden shadow-2xl flex flex-col">
-        {/* Header */}
-        <div className="p-4 border-b border-slate-800 flex items-center justify-between">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/70 backdrop-blur-sm">
+      <div className="bg-white border border-slate-200 rounded-3xl w-full max-w-md overflow-hidden shadow-2xl flex flex-col">
+        {/* Header (Clean & Light) */}
+        <div className="p-4 border-b border-slate-100 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <div className="p-2 bg-orange-500/10 text-orange-400 rounded-xl">
+            <div className="p-2 bg-orange-100 text-orange-600 rounded-xl">
               <Camera className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="font-bold text-white text-base">Quét Mã QR Thiết Bị</h3>
-              <p className="text-xs text-slate-400">Hướng camera vào tem dán trên thiết bị</p>
+              <h3 className="font-bold text-slate-900 text-base">Quét Mã QR Thiết Bị</h3>
+              <p className="text-xs text-slate-500">Hướng camera vào tem dán trên máy ảnh / lens</p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="p-2 text-slate-400 hover:text-white rounded-xl hover:bg-slate-800/80 transition"
+            className="p-2 text-slate-400 hover:text-slate-700 rounded-xl hover:bg-slate-100 transition"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* Video Scanner Area */}
-        <div className="relative aspect-square bg-black overflow-hidden flex items-center justify-center">
+        <div className="relative aspect-square bg-slate-950 overflow-hidden flex items-center justify-center">
           {cameraError ? (
             <div className="p-6 text-center">
-              <AlertCircle className="w-12 h-12 text-amber-500 mx-auto mb-3" />
+              <AlertCircle className="w-12 h-12 text-amber-400 mx-auto mb-3" />
               <p className="text-xs text-slate-300 mb-4">{cameraError}</p>
               <button
                 onClick={() => fileInputRef.current?.click()}
-                className="inline-flex items-center gap-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-xl text-xs font-medium transition"
+                className="inline-flex items-center gap-2 px-4 py-2 bg-white hover:bg-slate-100 text-slate-900 rounded-xl text-xs font-bold transition shadow"
               >
-                <Upload className="w-4 h-4 text-orange-400" />
+                <Upload className="w-4 h-4 text-orange-600" />
                 Chọn ảnh chụp tem QR
               </button>
             </div>
@@ -217,14 +215,14 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
 
               {/* Viewfinder Target Frame */}
               <div className="absolute inset-0 pointer-events-none flex items-center justify-center p-8">
-                <div className="relative w-64 h-64 border-2 border-orange-500/80 rounded-2xl shadow-inner shadow-orange-500/20">
-                  <div className="absolute top-0 left-0 w-6 h-6 border-t-4 border-l-4 border-orange-400 rounded-tl-lg" />
-                  <div className="absolute top-0 right-0 w-6 h-6 border-t-4 border-r-4 border-orange-400 rounded-tr-lg" />
-                  <div className="absolute bottom-0 left-0 w-6 h-6 border-b-4 border-l-4 border-orange-400 rounded-bl-lg" />
-                  <div className="absolute bottom-0 right-0 w-6 h-6 border-b-4 border-r-4 border-orange-400 rounded-br-lg" />
+                <div className="relative w-64 h-64 border-2 border-orange-500/80 rounded-2xl shadow-lg">
+                  <div className="absolute top-0 left-0 w-6 h-6 border-t-4 border-l-4 border-orange-500 rounded-tl-lg" />
+                  <div className="absolute top-0 right-0 w-6 h-6 border-t-4 border-r-4 border-orange-500 rounded-tr-lg" />
+                  <div className="absolute bottom-0 left-0 w-6 h-6 border-b-4 border-l-4 border-orange-500 rounded-bl-lg" />
+                  <div className="absolute bottom-0 right-0 w-6 h-6 border-b-4 border-r-4 border-orange-500 rounded-br-lg" />
                   
                   {/* Laser Scan line */}
-                  <div className="w-full h-0.5 bg-gradient-to-r from-transparent via-orange-400 to-transparent absolute top-1/2 -translate-y-1/2 animate-pulse" />
+                  <div className="w-full h-0.5 bg-gradient-to-r from-transparent via-orange-500 to-transparent absolute top-1/2 -translate-y-1/2 animate-pulse" />
                 </div>
               </div>
             </>
@@ -240,19 +238,19 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
           />
         </div>
 
-        {/* Action Controls & Manual Fallback */}
-        <div className="p-4 space-y-3 bg-[#0E1524]">
+        {/* Action Controls & Manual Fallback (Light) */}
+        <div className="p-4 space-y-3 bg-slate-50 border-t border-slate-100">
           <div className="flex items-center justify-between gap-2">
             <button
               onClick={() => fileInputRef.current?.click()}
-              className="flex-1 flex items-center justify-center gap-2 py-2 px-3 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-medium transition border border-slate-700/60"
+              className="flex-1 flex items-center justify-center gap-2 py-2 px-3 bg-white hover:bg-slate-100 text-slate-700 rounded-xl text-xs font-bold transition border border-slate-200 shadow-sm"
             >
-              <Upload className="w-4 h-4 text-orange-400" />
-              Tải ảnh QR lên
+              <Upload className="w-4 h-4 text-orange-600" />
+              Tải ảnh tem QR
             </button>
             <button
               onClick={startCamera}
-              className="p-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl transition border border-slate-700/60"
+              className="p-2 bg-white hover:bg-slate-100 text-slate-600 rounded-xl transition border border-slate-200 shadow-sm"
               title="Khởi động lại camera"
             >
               <RefreshCw className="w-4 h-4" />
@@ -265,15 +263,15 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
               <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
               <input
                 type="text"
-                placeholder="Hoặc nhập mã (vd: MMM-CAM-001)"
+                placeholder="Nhập mã (vd: MMM-CAM-001)"
                 value={manualCode}
                 onChange={e => setManualCode(e.target.value)}
-                className="w-full pl-9 pr-3 py-2 bg-slate-900 border border-slate-700/80 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-orange-500 uppercase font-mono"
+                className="w-full pl-9 pr-3 py-2 bg-white border border-slate-200 rounded-xl text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-orange-500 uppercase font-mono shadow-sm"
               />
             </div>
             <button
               type="submit"
-              className="px-4 py-2 bg-orange-600 hover:bg-orange-500 text-white rounded-xl text-xs font-semibold transition"
+              className="px-4 py-2 bg-orange-600 hover:bg-orange-500 text-white rounded-xl text-xs font-bold transition shadow-sm"
             >
               Mở
             </button>
@@ -282,20 +280,20 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
           {/* Quick Asset Selector */}
           {assets.length > 0 && (
             <div>
-              <label className="text-[11px] text-slate-400 block mb-1">
-                Chọn nhanh thiết bị có sẵn để mở:
+              <label className="text-[11px] font-semibold text-slate-600 block mb-1">
+                Hoặc chọn nhanh thiết bị:
               </label>
               <select
                 onChange={e => {
                   if (e.target.value) handleDetectedCode(e.target.value);
                 }}
                 defaultValue=""
-                className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-xl text-xs text-slate-200 focus:outline-none focus:border-orange-500"
+                className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs text-slate-700 focus:outline-none focus:border-orange-500 shadow-sm font-medium"
               >
-                <option value="" disabled>-- Chọn thiết bị trong studio --</option>
+                <option value="" disabled>-- Chọn thiết bị trong danh sách --</option>
                 {assets.map(a => (
                   <option key={a.id} value={a.code}>
-                    {a.code} - {a.name} ({a.status})
+                    {a.code} - {a.name}
                   </option>
                 ))}
               </select>
