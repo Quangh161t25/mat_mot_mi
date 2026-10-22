@@ -134,6 +134,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [isSyncing, setIsSyncing] = useState(false);
   const [isLoaded, setIsLoaded] = useState(false);
 
+  // Bộ nhớ theo dõi giao dịch đã báo chuông để tránh lặp lại
+  const notifiedTransferKeysRef = React.useRef<Set<string>>(new Set());
+  const isFirstSyncRef = React.useRef(true);
+
   // 1. Sync from Google Sheets (Bỏ hoàn toàn cache để đảm bảo Google Sheets là nguồn dữ liệu chuẩn duy nhất)
   const syncWithGoogleSheets = useCallback(async () => {
     setIsSyncing(true);
@@ -163,11 +167,79 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               localStorage.setItem(STORAGE_KEYS.PROFILES, JSON.stringify(json.data.profiles));
             } catch (e) {}
           }
-          // 3. Đồng bộ Mượn - Trả
+          // 3. Đồng bộ Mượn - Trả & KÍCH HOẠT CHUÔNG RUNG THÔNG BÁO REAL-TIME
           if (Array.isArray(json.data.transfers)) {
-            setTransfers(json.data.transfers);
+            const incomingTransfers: TransferRecord[] = json.data.transfers;
+
+            if (!isFirstSyncRef.current) {
+              incomingTransfers.forEach(t => {
+                const notifKey = `${t.id}-${t.status}`;
+                if (!notifiedTransferKeysRef.current.has(notifKey)) {
+                  notifiedTransferKeysRef.current.add(notifKey);
+
+                  const isRecipient = currentUser?.id === t.to_user_id || 
+                    (t.to_user_name && currentUser?.full_name && 
+                      (t.to_user_name.toLowerCase().includes(currentUser.full_name.toLowerCase()) || 
+                       currentUser.full_name.toLowerCase().includes(t.to_user_name.toLowerCase())));
+
+                  const isSender = currentUser?.id === t.from_user_id || 
+                    (t.from_user_name && currentUser?.full_name && 
+                      (t.from_user_name.toLowerCase().includes(currentUser.full_name.toLowerCase()) || 
+                       currentUser.full_name.toLowerCase().includes(t.from_user_name.toLowerCase())));
+
+                  // 🔔 Trường hợp có người vừa tạo bàn giao tới mình hoặc tới Admin
+                  if (t.status === 'pending' && (isRecipient || currentUser?.role === 'admin')) {
+                    const title = `🔔 Bàn giao thiết bị mới!`;
+                    const body = `${t.from_user_name} vừa bàn giao "${t.asset_name}" (${t.asset_code}) cho bạn. Vui lòng xác nhận!`;
+                    
+                    triggerDeviceNotification({ title, body, url: '/transfers' });
+
+                    setNotifications(prev => [{
+                      id: `notif-${Date.now()}-${t.id}`,
+                      title,
+                      message: body,
+                      type: 'transfer_request',
+                      target_user_id: t.to_user_id,
+                      actor_name: t.from_user_name,
+                      asset_code: t.asset_code,
+                      asset_name: t.asset_name,
+                      link: '/transfers',
+                      is_read: false,
+                      created_at: new Date().toISOString(),
+                    }, ...prev]);
+                  }
+                  // ✅ Trường hợp bên nhận đã xác nhận thành công
+                  else if (t.status === 'completed' && isSender) {
+                    const title = `✅ Bàn giao đã hoàn tất!`;
+                    const body = `${t.to_user_name} đã xác nhận nhận máy "${t.asset_name}".`;
+                    
+                    triggerDeviceNotification({ title, body, url: '/transfers' });
+
+                    setNotifications(prev => [{
+                      id: `notif-${Date.now()}-${t.id}`,
+                      title,
+                      message: body,
+                      type: 'transfer_confirmed',
+                      target_user_id: t.from_user_id,
+                      actor_name: t.to_user_name,
+                      asset_code: t.asset_code,
+                      asset_name: t.asset_name,
+                      link: '/transfers',
+                      is_read: false,
+                      created_at: new Date().toISOString(),
+                    }, ...prev]);
+                  }
+                }
+              });
+            } else {
+              // Lần tải đầu tiên: ghi nhớ để không báo lại các giao dịch cũ trong quá khứ
+              incomingTransfers.forEach(t => notifiedTransferKeysRef.current.add(`${t.id}-${t.status}`));
+              isFirstSyncRef.current = false;
+            }
+
+            setTransfers(incomingTransfers);
             try {
-              localStorage.setItem(STORAGE_KEYS.TRANSFERS, JSON.stringify(json.data.transfers));
+              localStorage.setItem(STORAGE_KEYS.TRANSFERS, JSON.stringify(incomingTransfers));
             } catch (e) {}
           }
           // 4. Đồng bộ Kiểm kê
@@ -197,7 +269,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     } finally {
       setIsSyncing(false);
     }
-  }, []);
+  }, [currentUser]);
 
   // 2. Helper gửi request tới Google Sheets API và tự động refresh lại state
   const dispatchToSheets = useCallback(async (action: string, payload: any) => {
@@ -260,6 +332,36 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     // Sync with Google Sheets in background
     syncWithGoogleSheets();
+  }, [syncWithGoogleSheets]);
+
+  // Polling tự động mỗi 10 giây & khi mở lại app/mở khóa màn hình điện thoại
+  useEffect(() => {
+    const interval = setInterval(() => {
+      syncWithGoogleSheets();
+    }, 10000);
+
+    const handleVisibility = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        syncWithGoogleSheets();
+      }
+    };
+
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', handleVisibility);
+    }
+    if (typeof window !== 'undefined') {
+      window.addEventListener('focus', handleVisibility);
+    }
+
+    return () => {
+      clearInterval(interval);
+      if (typeof document !== 'undefined') {
+        document.removeEventListener('visibilitychange', handleVisibility);
+      }
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('focus', handleVisibility);
+      }
+    };
   }, [syncWithGoogleSheets]);
 
   // Save to localStorage when state changes

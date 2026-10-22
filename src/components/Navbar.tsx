@@ -36,6 +36,8 @@ export const Navbar: React.FC = () => {
     googleSheetUrl,
     isSyncing,
     syncWithGoogleSheets,
+    requestPushPermission,
+    sendTestNotification,
     resetToDemoData 
   } = useApp();
 
@@ -309,7 +311,26 @@ export const Navbar: React.FC = () => {
         </div>
       )}
 
-      {/* Mobile Bottom Navigation Bar */}
+      {/* Mobile Push & Chime Activation Banner */}
+      <div className="bg-gradient-to-r from-orange-600 to-amber-600 text-white px-3.5 py-1.5 text-xs flex items-center justify-between gap-2 shadow-sm no-print sm:hidden">
+        <div className="flex items-center gap-1.5 truncate">
+          <Bell className="w-3.5 h-3.5 shrink-0 animate-bounce" />
+          <span className="truncate text-[11px] font-medium">
+            Thông báo chuông & rung khi có mượn trả
+          </span>
+        </div>
+        <div className="flex items-center gap-1.5 shrink-0">
+          <button
+            onClick={async () => {
+              await requestPushPermission();
+              sendTestNotification();
+            }}
+            className="px-2.5 py-1 bg-white text-orange-700 hover:bg-orange-50 font-bold rounded-lg text-[10px] shadow-sm transition active:scale-95"
+          >
+            Thử chuông & rung
+          </button>
+        </div>
+      </div>
       <div className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-lg border-t border-slate-200 px-2 py-1.5 flex items-center justify-around no-print shadow-lg">
         {navLinks.map(link => {
           const Icon = link.icon;
