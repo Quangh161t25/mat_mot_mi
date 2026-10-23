@@ -263,26 +263,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       } else {
         syncFailuresRef.current += 1;
         // Chỉ hiện lỗi khi hoàn toàn chưa có dữ liệu nào và thất bại liên tiếp
-        if (assets.length === 0 && syncFailuresRef.current >= 3) {
+        if (syncFailuresRef.current >= 3) {
           setGoogleSheetsStatus('error');
           setGoogleSheetsError(json.error || 'Chưa thể kết nối tới Google Sheets trên server.');
-        } else {
-          // Vẫn giữ trạng thái connected để không làm gián đoạn trải nghiệm người dùng
-          setGoogleSheetsStatus('connected');
-          setGoogleSheetsError(null);
         }
       }
     } catch (err: any) {
       console.warn('Lỗi đồng bộ Google Sheets:', err);
       syncFailuresRef.current += 1;
       // Chỉ hiện lỗi khi hoàn toàn chưa có dữ liệu và thất bại 3 lần liên tiếp
-      if (assets.length === 0 && syncFailuresRef.current >= 3) {
+      if (syncFailuresRef.current >= 3) {
         setGoogleSheetsStatus('error');
         setGoogleSheetsError(err.message || 'Không thể gọi API đồng bộ Google Sheets');
-      } else {
-        // Nếu đã có dữ liệu trong app, giữ nguyên trạng thái hoạt động bình thường
-        setGoogleSheetsStatus('connected');
-        setGoogleSheetsError(null);
       }
     } finally {
       setIsSyncing(false);
@@ -352,13 +344,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     syncWithGoogleSheets();
   }, [syncWithGoogleSheets]);
 
-  // Polling tự động mỗi 45 giây (bảo vệ Quota Google Sheets luôn an toàn tuyệt đối) & khi mở lại app/mở khóa màn hình
+  // Polling tự động mỗi 15 giây (server cache 5s + batchGet 1 request nên vẫn an toàn Quota) & khi mở lại app/mở khóa màn hình
   useEffect(() => {
     const interval = setInterval(() => {
       if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
         syncWithGoogleSheets();
       }
-    }, 45000);
+    }, 15000);
 
     const handleVisibility = () => {
       if (typeof document !== 'undefined' && document.visibilityState === 'visible') {

@@ -54,12 +54,11 @@ export async function GET() {
     console.error('API Google Sheets GET error:', err);
     // Luôn trả về 200 để client frontend không bao giờ bị ném lỗi Failed to fetch
     return NextResponse.json({
-      success: true,
-      connected: true,
-      isQuotaThrottled: true,
+      success: false,
+      connected: false,
       spreadsheetId: SPREADSHEET_ID,
       diagnostics: diag,
-      warning: err.message || 'Hệ thống đang hoạt động với dữ liệu đồng bộ an toàn',
+      error: err.message || 'Lỗi đọc dữ liệu Google Sheets',
     }, { 
       status: 200,
       headers: corsAndNoCacheHeaders

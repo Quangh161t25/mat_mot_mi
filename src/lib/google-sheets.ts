@@ -2,7 +2,6 @@ import { google } from 'googleapis';
 import path from 'path';
 import fs from 'fs';
 import { Asset, UserProfile, TransferRecord, AuditItem, AuditSession } from '@/types';
-import { INITIAL_ASSETS, INITIAL_PROFILES, INITIAL_TRANSFERS } from '@/lib/mock-data';
 
 export const SPREADSHEET_ID = 
   process.env.GOOGLE_SHEET_ID || 
@@ -127,16 +126,6 @@ const CACHE_FILE_PATH = path.join(
   '.sheets-cache.json'
 );
 
-function readDiskCache(): any {
-  try {
-    if (fs.existsSync(CACHE_FILE_PATH)) {
-      const raw = fs.readFileSync(CACHE_FILE_PATH, 'utf8');
-      return JSON.parse(raw);
-    }
-  } catch (e) {}
-  return null;
-}
-
 function writeDiskCache(data: any): void {
   try {
     fs.writeFileSync(CACHE_FILE_PATH, JSON.stringify(data), 'utf8');
@@ -152,7 +141,7 @@ let cachedData: {
   auditSessions: AuditSession[];
 } | null = null;
 let lastFetchTimestamp = 0;
-const CACHE_TTL_MS = 15000; // 15 giây cache máy chủ
+const CACHE_TTL_MS = 5000; // 5 giây cache máy chủ (đủ chống vượt Quota, vẫn gần real-time)
 
 export function invalidateSheetsCache() {
   cachedData = null;
@@ -174,34 +163,18 @@ export async function fetchAllFromSheets(forceRefresh = false) {
     return cachedData;
   }
 
-  // 2. Kiểm tra Disk Cache nếu memory cache chưa có
-  if (!cachedData) {
-    const disk = readDiskCache();
-    if (disk && !forceRefresh) {
-      cachedData = disk;
-      lastFetchTimestamp = now;
-      return disk;
-    }
-  }
-
   const sheets = getSheetsClient();
   if (!sheets) {
-    if (cachedData) return cachedData;
-    const disk = readDiskCache();
-    if (disk) return disk;
-    return {
-      assets: INITIAL_ASSETS,
-      profiles: INITIAL_PROFILES,
-      transfers: INITIAL_TRANSFERS,
-      auditItems: [],
-      auditSessions: [],
-    };
+    const diag = getGoogleAuthDiagnostics();
+    throw new Error(
+      `Chưa tìm thấy thông tin xác thực Google Service Account. (File: ${diag.hasFile}, JSON Env: ${diag.hasJsonEnv}, Email Env: ${diag.hasEmailEnv}, Key Env: ${diag.hasKeyEnv})`
+    );
   }
 
   try {
     // Giới hạn thời gian gọi Google Sheets tối đa 5 giây (tránh Vercel Serverless Function 10s timeout)
     const timeoutPromise = new Promise<never>((_, reject) => 
-      setTimeout(() => reject(new Error('Google Sheets API timeout sau 5s')), 5000)
+      setTimeout(() => reject(new Error('Google Sheets API timeout sau 8s')), 8000)
     );
 
     // Sử dụng batchGet gộp 4 Sheet thành 1 request duy nhất để không bao giờ vượt Quota của Google
@@ -340,24 +313,9 @@ export async function fetchAllFromSheets(forceRefresh = false) {
     return result;
   } catch (err: any) {
     console.warn('Lỗi gọi Google Sheets (Quota hoặc mạng):', err.message);
-    // 1. Ưu tiên bộ nhớ RAM nếu có
-    if (cachedData) {
-      return cachedData;
-    }
-    // 2. Tiếp theo là bộ nhớ đệm Disk /tmp
-    const disk = readDiskCache();
-    if (disk) {
-      cachedData = disk;
-      return disk;
-    }
-    // 3. Cuối cùng trả về dữ liệu khởi tạo mặc định để web không bao giờ bị sập
-    return {
-      assets: INITIAL_ASSETS,
-      profiles: INITIAL_PROFILES,
-      transfers: INITIAL_TRANSFERS,
-      auditItems: [],
-      auditSessions: [],
-    };
+    // Không trả dữ liệu cũ/dữ liệu mẫu giả làm dữ liệu mới: client sẽ giữ nguyên dữ liệu đang có
+    // và thử lại ở nhịp polling sau. (Trước đây trả mock/cache cũ khiến web hiển thị sai và không báo)
+    throw err;
   }
 }
 

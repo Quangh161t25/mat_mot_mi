@@ -33,3 +33,5 @@ google-service-account.json
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+.sheets-cache.json
