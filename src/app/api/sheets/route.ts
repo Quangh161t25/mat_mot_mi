@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { 
   fetchAllFromSheets, 
+  getCachedSheetsData,
   appendAssetToSheet,
   updateAssetInSheet,
   deleteAssetInSheet,
@@ -37,10 +38,20 @@ export async function OPTIONS() {
   });
 }
 
-export async function GET() {
+// Cho phép CDN của Vercel dùng chung 1 phản hồi cho MỌI người dùng/thiết bị trong 10s.
+// Nhờ vậy dù bao nhiêu máy cùng polling, Google Sheets chỉ bị đọc ~6 lần/phút (giới hạn là 60).
+const sharedCdnCacheHeaders = {
+  ...corsAndNoCacheHeaders,
+  'Vercel-CDN-Cache-Control': 'public, s-maxage=10, stale-while-revalidate=60',
+  'CDN-Cache-Control': 'public, s-maxage=10, stale-while-revalidate=60',
+};
+
+export async function GET(req: Request) {
   const diag = getGoogleAuthDiagnostics();
+  // ?fresh=... dùng ngay sau khi ghi dữ liệu để bỏ qua cache và thấy thay đổi tức thì
+  const forceRefresh = new URL(req.url).searchParams.has('fresh');
   try {
-    const data = await fetchAllFromSheets();
+    const data = await fetchAllFromSheets(forceRefresh);
     return NextResponse.json({
       success: true,
       connected: true,
@@ -48,10 +59,22 @@ export async function GET() {
       diagnostics: diag,
       data,
     }, {
-      headers: corsAndNoCacheHeaders
+      headers: forceRefresh ? corsAndNoCacheHeaders : sharedCdnCacheHeaders
     });
   } catch (err: any) {
     console.error('API Google Sheets GET error:', err);
+    // Google báo vượt Quota: trả dữ liệu thật gần nhất trong RAM (nếu có) thay vì báo lỗi
+    const stale = getCachedSheetsData();
+    if (stale) {
+      return NextResponse.json({
+        success: true,
+        connected: true,
+        stale: true,
+        spreadsheetId: SPREADSHEET_ID,
+        diagnostics: diag,
+        data: stale,
+      }, { headers: corsAndNoCacheHeaders });
+    }
     // Luôn trả về 200 để client frontend không bao giờ bị ném lỗi Failed to fetch
     return NextResponse.json({
       success: false,

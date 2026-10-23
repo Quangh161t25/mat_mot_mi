@@ -143,8 +143,11 @@ let cachedData: {
 let lastFetchTimestamp = 0;
 const CACHE_TTL_MS = 5000; // 5 giây cache máy chủ (đủ chống vượt Quota, vẫn gần real-time)
 
+export function getCachedSheetsData() {
+  return cachedData;
+}
+
 export function invalidateSheetsCache() {
-  cachedData = null;
   lastFetchTimestamp = 0;
   try {
     if (fs.existsSync(CACHE_FILE_PATH)) {

@@ -140,15 +140,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const syncFailuresRef = React.useRef(0);
 
   // 1. Sync from Google Sheets (Bỏ hoàn toàn cache để đảm bảo Google Sheets là nguồn dữ liệu chuẩn duy nhất)
-  const syncWithGoogleSheets = useCallback(async () => {
+  const syncWithGoogleSheets = useCallback(async (fresh = false) => {
     setIsSyncing(true);
     try {
-      const res = await fetch(`/api/sheets?t=${Date.now()}`, {
+      // Polling thường dùng URL cố định để CDN Vercel dùng chung cache (tránh vượt Quota Google);
+      // chỉ sau khi chính mình ghi dữ liệu mới gọi ?fresh để thấy thay đổi ngay
+      const res = await fetch(fresh ? `/api/sheets?fresh=${Date.now()}` : '/api/sheets', {
         cache: 'no-store',
-        headers: {
-          'Pragma': 'no-cache',
-          'Cache-Control': 'no-cache',
-        }
       });
       const json = await res.json();
       
@@ -298,7 +296,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setGoogleSheetsStatus('connected');
         setGoogleSheetsError(null);
         // Tự động kéo lại dữ liệu mới nhất từ Sheet về
-        setTimeout(() => syncWithGoogleSheets(), 300);
+        setTimeout(() => syncWithGoogleSheets(true), 300);
       }
     } catch (err: any) {
       console.warn(`Lỗi mạng khi ghi '${action}' sang Google Sheets:`, err);
