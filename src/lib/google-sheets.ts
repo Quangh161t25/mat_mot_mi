@@ -185,9 +185,9 @@ export async function fetchAllFromSheets(forceRefresh = false) {
   }
 
   try {
-    // Giới hạn thời gian gọi Google Sheets tối đa 5 giây (tránh Vercel Serverless Function timeout)
+    // Giới hạn thời gian gọi Google Sheets tối đa 9 giây (an toàn với maxDuration của Vercel)
     const timeoutPromise = new Promise<never>((_, reject) => 
-      setTimeout(() => reject(new Error('Google Sheets API timeout sau 5s')), 5000)
+      setTimeout(() => reject(new Error('Google Sheets API timeout sau 9s')), 9000)
     );
 
     // Sử dụng batchGet gộp 4 Sheet thành 1 request duy nhất để không bao giờ vượt Quota của Google
@@ -335,7 +335,14 @@ export async function fetchAllFromSheets(forceRefresh = false) {
       cachedData = disk;
       return disk;
     }
-    throw err;
+    // Trả về dữ liệu mặc định thay vì làm sập ứng dụng
+    return {
+      assets: [],
+      profiles: INITIAL_PROFILES,
+      transfers: [],
+      auditItems: [],
+      auditSessions: [],
+    };
   }
 }
 
