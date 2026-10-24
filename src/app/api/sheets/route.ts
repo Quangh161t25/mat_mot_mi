@@ -39,17 +39,10 @@ export async function OPTIONS() {
   });
 }
 
-// Cho phép CDN của Vercel dùng chung 1 phản hồi cho MỌI người dùng/thiết bị trong 60s.
-const sharedCdnCacheHeaders = {
-  ...corsAndNoCacheHeaders,
-  'Vercel-CDN-Cache-Control': 'public, s-maxage=60, stale-while-revalidate=180',
-  'CDN-Cache-Control': 'public, s-maxage=60, stale-while-revalidate=180',
-};
-
 export async function GET(req: Request) {
   const diag = getGoogleAuthDiagnostics();
-  // ?fresh=... dùng ngay sau khi ghi dữ liệu để bỏ qua cache và thấy thay đổi tức thì
-  const forceRefresh = new URL(req.url).searchParams.has('fresh');
+  const url = new URL(req.url);
+  const forceRefresh = url.searchParams.has('fresh') || url.searchParams.has('t');
   try {
     const data = await fetchAllFromSheets(forceRefresh);
     return NextResponse.json({
@@ -59,7 +52,7 @@ export async function GET(req: Request) {
       diagnostics: diag,
       data,
     }, {
-      headers: forceRefresh ? corsAndNoCacheHeaders : sharedCdnCacheHeaders
+      headers: corsAndNoCacheHeaders
     });
   } catch (err: any) {
     console.error('API Google Sheets GET error:', err);

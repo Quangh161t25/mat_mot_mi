@@ -152,13 +152,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [assets]);
 
   // 1. Sync from Google Sheets (Bỏ hoàn toàn cache để đảm bảo Google Sheets là nguồn dữ liệu chuẩn duy nhất)
-  const syncWithGoogleSheets = useCallback(async (fresh = false) => {
+  const syncWithGoogleSheets = useCallback(async (fresh = true) => {
     setIsSyncing(true);
     try {
-      // Polling thường dùng URL cố định để CDN Vercel dùng chung cache (tránh vượt Quota Google);
-      // chỉ sau khi chính mình ghi dữ liệu mới gọi ?fresh để thấy thay đổi ngay
-      const res = await fetch(fresh ? `/api/sheets?fresh=${Date.now()}` : '/api/sheets', {
+      const res = await fetch(`/api/sheets?t=${Date.now()}${fresh ? '&fresh=1' : ''}`, {
         cache: 'no-store',
+        headers: {
+          'Pragma': 'no-cache',
+          'Cache-Control': 'no-cache',
+        }
       });
       
       const contentType = res.headers.get('content-type') || '';
@@ -360,23 +362,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // Register Service Worker for PWA & Mobile Push
     registerServiceWorker();
 
-    // Sync with Google Sheets in background một lần duy nhất khi mở trang
-    syncWithGoogleSheets();
+    // Đồng bộ ngay lập tức từ Google Sheets khi mở app (fresh = true để không bị giữ cache)
+    syncWithGoogleSheets(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Polling tự động mỗi 3 phút (180,000ms) - Tiết kiệm tối đa Quota Google Sheets
+  // Polling tự động mỗi 45 giây & ngay khi mở khóa màn hình điện thoại
   useEffect(() => {
     const interval = setInterval(() => {
       if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
         syncWithGoogleSheets(true);
       }
-    }, 180000); // 3 phút
+    }, 45000); // 45 giây
 
     const handleVisibility = () => {
-      // Chỉ tự động kiểm tra lại khi mở tab nếu lần đồng bộ trước đã cách hơn 3 phút
+      // Khi mở khóa điện thoại hoặc quay lại tab, nếu đã quá 10 giây thì đồng bộ lại ngay
       if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
-        if (Date.now() - lastSyncTimeRef.current > 180000) {
+        if (Date.now() - lastSyncTimeRef.current > 10000) {
           syncWithGoogleSheets(true);
         }
       }

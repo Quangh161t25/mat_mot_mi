@@ -151,7 +151,7 @@ let cachedData: {
   auditSessions: AuditSession[];
 } | null = null;
 let lastFetchTimestamp = 0;
-const CACHE_TTL_MS = 60000; // 60 giây cache máy chủ (tiết kiệm Quota tối đa)
+const CACHE_TTL_MS = 5000; // 5 giây cache máy chủ (chống nghẽn khi nhiều máy gọi cùng giây, nhưng đồng bộ tức thì)
 
 export function getCachedSheetsData() {
   return cachedData || readDiskCache();
