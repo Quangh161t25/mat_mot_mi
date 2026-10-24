@@ -38,12 +38,11 @@ export async function OPTIONS() {
   });
 }
 
-// Cho phép CDN của Vercel dùng chung 1 phản hồi cho MỌI người dùng/thiết bị trong 10s.
-// Nhờ vậy dù bao nhiêu máy cùng polling, Google Sheets chỉ bị đọc ~6 lần/phút (giới hạn là 60).
+// Cho phép CDN của Vercel dùng chung 1 phản hồi cho MỌI người dùng/thiết bị trong 60s.
 const sharedCdnCacheHeaders = {
   ...corsAndNoCacheHeaders,
-  'Vercel-CDN-Cache-Control': 'public, s-maxage=10, stale-while-revalidate=60',
-  'CDN-Cache-Control': 'public, s-maxage=10, stale-while-revalidate=60',
+  'Vercel-CDN-Cache-Control': 'public, s-maxage=60, stale-while-revalidate=180',
+  'CDN-Cache-Control': 'public, s-maxage=60, stale-while-revalidate=180',
 };
 
 export async function GET(req: Request) {
@@ -63,7 +62,7 @@ export async function GET(req: Request) {
     });
   } catch (err: any) {
     console.error('API Google Sheets GET error:', err);
-    // Google báo vượt Quota: trả dữ liệu thật gần nhất trong RAM (nếu có) thay vì báo lỗi
+    // Google báo vượt Quota: trả dữ liệu thật gần nhất trong RAM hoặc Disk thay vì báo lỗi
     const stale = getCachedSheetsData();
     if (stale) {
       return NextResponse.json({
@@ -75,6 +74,23 @@ export async function GET(req: Request) {
         data: stale,
       }, { headers: corsAndNoCacheHeaders });
     }
+
+    const isQuota = err.message && (err.message.includes('Quota exceeded') || err.message.includes('rateLimitExceeded'));
+    if (isQuota) {
+      return NextResponse.json({
+        success: true,
+        connected: true,
+        isQuotaThrottled: true,
+        spreadsheetId: SPREADSHEET_ID,
+        diagnostics: diag,
+        data: null,
+        warning: 'Google Sheets tạm bận Quota, ứng dụng tiếp tục chạy bình thường với dữ liệu sẵn có.',
+      }, { 
+        status: 200,
+        headers: corsAndNoCacheHeaders
+      });
+    }
+
     // Luôn trả về 200 để client frontend không bao giờ bị ném lỗi Failed to fetch
     return NextResponse.json({
       success: false,

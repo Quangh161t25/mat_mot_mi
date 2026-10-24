@@ -138,6 +138,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const notifiedTransferKeysRef = React.useRef<Set<string>>(new Set());
   const isFirstSyncRef = React.useRef(true);
   const syncFailuresRef = React.useRef(0);
+  const lastSyncTimeRef = React.useRef(Date.now());
 
   // 1. Sync from Google Sheets (Bỏ hoàn toàn cache để đảm bảo Google Sheets là nguồn dữ liệu chuẩn duy nhất)
   const syncWithGoogleSheets = useCallback(async (fresh = false) => {
@@ -256,12 +257,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           }
         }
         syncFailuresRef.current = 0;
+        lastSyncTimeRef.current = Date.now();
         setGoogleSheetsStatus('connected');
         setGoogleSheetsError(null);
       } else {
         syncFailuresRef.current += 1;
-        // Chỉ hiện lỗi khi hoàn toàn chưa có dữ liệu nào và thất bại liên tiếp
-        if (syncFailuresRef.current >= 3) {
+        // Nếu đã có dữ liệu trong app, luôn giữ trạng thái connected bình thường, không hiện banner lỗi
+        if (assets.length > 0) {
+          setGoogleSheetsStatus('connected');
+          setGoogleSheetsError(null);
+        } else if (syncFailuresRef.current >= 3) {
           setGoogleSheetsStatus('error');
           setGoogleSheetsError(json.error || 'Chưa thể kết nối tới Google Sheets trên server.');
         }
@@ -269,8 +274,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     } catch (err: any) {
       console.warn('Lỗi đồng bộ Google Sheets:', err);
       syncFailuresRef.current += 1;
-      // Chỉ hiện lỗi khi hoàn toàn chưa có dữ liệu và thất bại 3 lần liên tiếp
-      if (syncFailuresRef.current >= 3) {
+      // Nếu đã có dữ liệu trong app, luôn giữ trạng thái connected bình thường, không hiện banner lỗi
+      if (assets.length > 0) {
+        setGoogleSheetsStatus('connected');
+        setGoogleSheetsError(null);
+      } else if (syncFailuresRef.current >= 3) {
         setGoogleSheetsStatus('error');
         setGoogleSheetsError(err.message || 'Không thể gọi API đồng bộ Google Sheets');
       }
@@ -342,17 +350,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     syncWithGoogleSheets();
   }, [syncWithGoogleSheets]);
 
-  // Polling tự động mỗi 15 giây (server cache 5s + batchGet 1 request nên vẫn an toàn Quota) & khi mở lại app/mở khóa màn hình
+  // Polling tự động mỗi 3 phút (180,000ms) - Tiết kiệm tối đa Quota Google Sheets
   useEffect(() => {
     const interval = setInterval(() => {
       if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
-        syncWithGoogleSheets();
+        syncWithGoogleSheets(true);
       }
-    }, 15000);
+    }, 180000); // 3 phút
 
     const handleVisibility = () => {
+      // Chỉ tự động kiểm tra lại khi mở tab nếu lần đồng bộ trước đã cách hơn 3 phút
       if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
-        syncWithGoogleSheets();
+        if (Date.now() - lastSyncTimeRef.current > 180000) {
+          syncWithGoogleSheets(true);
+        }
       }
     };
 

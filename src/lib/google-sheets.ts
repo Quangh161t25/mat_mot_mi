@@ -126,6 +126,16 @@ const CACHE_FILE_PATH = path.join(
   '.sheets-cache.json'
 );
 
+function readDiskCache(): any {
+  try {
+    if (fs.existsSync(CACHE_FILE_PATH)) {
+      const raw = fs.readFileSync(CACHE_FILE_PATH, 'utf8');
+      return JSON.parse(raw);
+    }
+  } catch (e) {}
+  return null;
+}
+
 function writeDiskCache(data: any): void {
   try {
     fs.writeFileSync(CACHE_FILE_PATH, JSON.stringify(data), 'utf8');
@@ -141,10 +151,10 @@ let cachedData: {
   auditSessions: AuditSession[];
 } | null = null;
 let lastFetchTimestamp = 0;
-const CACHE_TTL_MS = 5000; // 5 giây cache máy chủ (đủ chống vượt Quota, vẫn gần real-time)
+const CACHE_TTL_MS = 60000; // 60 giây cache máy chủ (tiết kiệm Quota tối đa)
 
 export function getCachedSheetsData() {
-  return cachedData;
+  return cachedData || readDiskCache();
 }
 
 export function invalidateSheetsCache() {
@@ -316,8 +326,15 @@ export async function fetchAllFromSheets(forceRefresh = false) {
     return result;
   } catch (err: any) {
     console.warn('Lỗi gọi Google Sheets (Quota hoặc mạng):', err.message);
-    // Không trả dữ liệu cũ/dữ liệu mẫu giả làm dữ liệu mới: client sẽ giữ nguyên dữ liệu đang có
-    // và thử lại ở nhịp polling sau. (Trước đây trả mock/cache cũ khiến web hiển thị sai và không báo)
+    // Nếu Google nghẽn Quota hoặc mạng chậm, ưu tiên trả về dữ liệu bộ đệm gần nhất
+    if (cachedData) {
+      return cachedData;
+    }
+    const disk = readDiskCache();
+    if (disk) {
+      cachedData = disk;
+      return disk;
+    }
     throw err;
   }
 }
