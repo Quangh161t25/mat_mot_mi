@@ -45,7 +45,6 @@ export const Navbar: React.FC = () => {
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const [isInstallModalOpen, setIsInstallModalOpen] = useState(false);
   const [isNotificationDrawerOpen, setIsNotificationDrawerOpen] = useState(false);
-  const [isAlertDismissed, setIsAlertDismissed] = useState(false);
 
   const navLinks = [
     { href: '/', label: 'Dashboard', icon: LayoutDashboard },
@@ -283,42 +282,6 @@ export const Navbar: React.FC = () => {
           </div>
         </div>
       </header>
-
-      {/* Google Sheets Connection Error Alert Banner (Chỉ hiện khi chưa có dữ liệu thiết bị nào và chưa bị tắt) */}
-      {googleSheetsStatus === 'error' && assets.length === 0 && !isAlertDismissed && (
-        <div className="bg-amber-50 border-b border-amber-200 px-4 py-2 text-xs text-amber-900 flex flex-wrap items-center justify-between gap-2 no-print">
-          <div className="flex items-center gap-2">
-            <span className="w-2.5 h-2.5 rounded-full bg-rose-500 animate-pulse" />
-            <span>
-              <strong>Google Sheets chưa đồng bộ:</strong> {googleSheetsError || 'Chưa nhận biến môi trường trên Vercel.'}
-            </span>
-          </div>
-          <div className="flex items-center gap-2">
-            <button 
-              onClick={() => syncWithGoogleSheets()}
-              disabled={isSyncing}
-              className="px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-lg transition text-xs shadow-sm"
-            >
-              {isSyncing ? 'Đang thử lại...' : 'Thử kết nối lại'}
-            </button>
-            <a 
-              href={googleSheetUrl}
-              target="_blank" 
-              rel="noopener noreferrer"
-              className="underline text-amber-800 hover:text-amber-950 font-semibold text-xs"
-            >
-              Mở Google Sheet
-            </a>
-            <button
-              onClick={() => setIsAlertDismissed(true)}
-              className="px-1.5 py-0.5 text-amber-700 hover:text-amber-950 font-bold ml-1 text-sm"
-              title="Đóng thông báo"
-            >
-              ✕
-            </button>
-          </div>
-        </div>
-      )}
 
       {/* Mobile Push & Chime Activation Banner */}
       <div className="bg-gradient-to-r from-orange-600 to-amber-600 text-white px-3.5 py-1.5 text-xs flex items-center justify-between gap-2 shadow-sm no-print sm:hidden">

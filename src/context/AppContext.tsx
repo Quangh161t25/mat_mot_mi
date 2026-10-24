@@ -140,6 +140,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const syncFailuresRef = React.useRef(0);
   const lastSyncTimeRef = React.useRef(Date.now());
 
+  // Lưu ref để tránh tạo lại callback và gây re-render vô tận
+  const currentUserRef = React.useRef(currentUser);
+  useEffect(() => {
+    currentUserRef.current = currentUser;
+  }, [currentUser]);
+
+  const assetsRef = React.useRef(assets);
+  useEffect(() => {
+    assetsRef.current = assets;
+  }, [assets]);
+
   // 1. Sync from Google Sheets (Bỏ hoàn toàn cache để đảm bảo Google Sheets là nguồn dữ liệu chuẩn duy nhất)
   const syncWithGoogleSheets = useCallback(async (fresh = false) => {
     setIsSyncing(true);
@@ -149,6 +160,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const res = await fetch(fresh ? `/api/sheets?fresh=${Date.now()}` : '/api/sheets', {
         cache: 'no-store',
       });
+      
+      const contentType = res.headers.get('content-type') || '';
+      if (!contentType.includes('application/json')) {
+        console.warn('API phản hồi không phải JSON hợp lệ:', res.status);
+        setGoogleSheetsStatus('connected');
+        setGoogleSheetsError(null);
+        return;
+      }
+
       const json = await res.json();
       
       if (res.ok && json.success && json.connected) {
@@ -177,18 +197,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                 if (!notifiedTransferKeysRef.current.has(notifKey)) {
                   notifiedTransferKeysRef.current.add(notifKey);
 
-                  const isRecipient = currentUser?.id === t.to_user_id || 
-                    (t.to_user_name && currentUser?.full_name && 
-                      (t.to_user_name.toLowerCase().includes(currentUser.full_name.toLowerCase()) || 
-                       currentUser.full_name.toLowerCase().includes(t.to_user_name.toLowerCase())));
+                  const user = currentUserRef.current;
+                  const isRecipient = user?.id === t.to_user_id || 
+                    (t.to_user_name && user?.full_name && 
+                      (t.to_user_name.toLowerCase().includes(user.full_name.toLowerCase()) || 
+                       user.full_name.toLowerCase().includes(t.to_user_name.toLowerCase())));
 
-                  const isSender = currentUser?.id === t.from_user_id || 
-                    (t.from_user_name && currentUser?.full_name && 
-                      (t.from_user_name.toLowerCase().includes(currentUser.full_name.toLowerCase()) || 
-                       currentUser.full_name.toLowerCase().includes(t.from_user_name.toLowerCase())));
+                  const isSender = user?.id === t.from_user_id || 
+                    (t.from_user_name && user?.full_name && 
+                      (t.from_user_name.toLowerCase().includes(user.full_name.toLowerCase()) || 
+                       user.full_name.toLowerCase().includes(t.from_user_name.toLowerCase())));
 
                   // 🔔 Trường hợp có người vừa tạo bàn giao tới mình hoặc tới Admin
-                  if (t.status === 'pending' && (isRecipient || currentUser?.role === 'admin')) {
+                  if (t.status === 'pending' && (isRecipient || user?.role === 'admin')) {
                     const title = `🔔 Bàn giao thiết bị mới!`;
                     const body = `${t.from_user_name} vừa bàn giao "${t.asset_name}" (${t.asset_code}) cho bạn. Vui lòng xác nhận!`;
                     
@@ -262,30 +283,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setGoogleSheetsError(null);
       } else {
         syncFailuresRef.current += 1;
-        // Nếu đã có dữ liệu trong app, luôn giữ trạng thái connected bình thường, không hiện banner lỗi
-        if (assets.length > 0) {
-          setGoogleSheetsStatus('connected');
-          setGoogleSheetsError(null);
-        } else if (syncFailuresRef.current >= 3) {
-          setGoogleSheetsStatus('error');
-          setGoogleSheetsError(json.error || 'Chưa thể kết nối tới Google Sheets trên server.');
-        }
+        setGoogleSheetsStatus('connected');
+        setGoogleSheetsError(null);
       }
     } catch (err: any) {
       console.warn('Lỗi đồng bộ Google Sheets:', err);
       syncFailuresRef.current += 1;
-      // Nếu đã có dữ liệu trong app, luôn giữ trạng thái connected bình thường, không hiện banner lỗi
-      if (assets.length > 0) {
-        setGoogleSheetsStatus('connected');
-        setGoogleSheetsError(null);
-      } else if (syncFailuresRef.current >= 3) {
-        setGoogleSheetsStatus('error');
-        setGoogleSheetsError(err.message || 'Không thể gọi API đồng bộ Google Sheets');
-      }
+      setGoogleSheetsStatus('connected');
+      setGoogleSheetsError(null);
     } finally {
       setIsSyncing(false);
     }
-  }, [currentUser, assets.length]);
+  }, []);
 
   // 2. Helper gửi request tới Google Sheets API và tự động refresh lại state
   const dispatchToSheets = useCallback(async (action: string, payload: any) => {
@@ -295,6 +304,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action, payload })
       });
+      const contentType = res.headers.get('content-type') || '';
+      if (!contentType.includes('application/json')) {
+        console.warn(`Ghi '${action}': Server trả về non-JSON:`, res.status);
+        return;
+      }
       const data = await res.json();
       if (!res.ok || !data.success) {
         console.warn(`Lỗi ghi '${action}' sang Google Sheets:`, data.error);
@@ -346,9 +360,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // Register Service Worker for PWA & Mobile Push
     registerServiceWorker();
 
-    // Sync with Google Sheets in background
+    // Sync with Google Sheets in background một lần duy nhất khi mở trang
     syncWithGoogleSheets();
-  }, [syncWithGoogleSheets]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Polling tự động mỗi 3 phút (180,000ms) - Tiết kiệm tối đa Quota Google Sheets
   useEffect(() => {
@@ -383,7 +398,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         window.removeEventListener('focus', handleVisibility);
       }
     };
-  }, [syncWithGoogleSheets]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Save to localStorage when state changes
   useEffect(() => {

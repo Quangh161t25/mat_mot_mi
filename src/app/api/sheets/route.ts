@@ -15,13 +15,14 @@ import {
   getGoogleAuthDiagnostics
 } from '@/lib/google-sheets';
 
-// Cấu hình không cache và timeout 30s cho Vercel Serverless
+// Cấu hình không cache và timeout an toàn cho Vercel Serverless
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 export const fetchCache = 'force-no-store';
-export const maxDuration = 30;
+export const maxDuration = 15;
 
 const corsAndNoCacheHeaders = {
+  'Content-Type': 'application/json',
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type, Authorization, Pragma, Cache-Control',
