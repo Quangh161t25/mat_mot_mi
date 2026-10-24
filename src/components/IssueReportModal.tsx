@@ -19,13 +19,15 @@ export const IssueReportModal: React.FC<IssueReportModalProps> = ({
   const { reportAssetIssue, resolveAssetIssue, canManageEquipment } = useApp();
   const [reason, setReason] = useState<AlertReason>('damaged');
   const [notes, setNotes] = useState('');
+  const prevIsOpenRef = React.useRef(false);
 
   React.useEffect(() => {
-    if (isOpen) {
+    if (isOpen && !prevIsOpenRef.current) {
       setReason('damaged');
       setNotes('');
     }
-  }, [isOpen, asset?.id]);
+    prevIsOpenRef.current = isOpen;
+  }, [isOpen]);
 
   if (!isOpen || !asset) return null;
 

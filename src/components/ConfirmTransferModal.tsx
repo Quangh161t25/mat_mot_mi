@@ -4,6 +4,7 @@ import React, { useState, useRef } from 'react';
 import confetti from 'canvas-confetti';
 import { useApp } from '@/context/AppContext';
 import { TransferRecord } from '@/types';
+import { compressImage } from '@/lib/image-utils';
 import { 
   CheckCircle2, 
   X, 
@@ -34,12 +35,14 @@ export const ConfirmTransferModal: React.FC<ConfirmTransferModalProps> = ({
   const [photos, setPhotos] = useState<string[]>([]);
   const [rejectReason, setRejectReason] = useState('');
   const [isRejecting, setIsRejecting] = useState(false);
+  const [isCompressing, setIsCompressing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const prevIsOpenRef = useRef(false);
 
   React.useEffect(() => {
-    if (isOpen) {
+    if (isOpen && !prevIsOpenRef.current) {
       setReceiverNotes('');
       setPhotos([]);
       setRejectReason('');
@@ -49,7 +52,8 @@ export const ConfirmTransferModal: React.FC<ConfirmTransferModalProps> = ({
         fileInputRef.current.value = '';
       }
     }
-  }, [isOpen, transfer?.id]);
+    prevIsOpenRef.current = isOpen;
+  }, [isOpen]);
 
   if (!isOpen || !transfer) return null;
 
@@ -57,19 +61,24 @@ export const ConfirmTransferModal: React.FC<ConfirmTransferModalProps> = ({
   const isGiver = currentUser.id === transfer.from_user_id;
   const canConfirm = (isRecipient || canManageEquipment) && !isGiver;
 
-  const handlePhotoCapture = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handlePhotoCapture = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
 
-    Array.from(files).forEach(file => {
-      const reader = new FileReader();
-      reader.onload = ev => {
-        if (ev.target?.result) {
-          setPhotos(prev => [...prev, ev.target!.result as string]);
-        }
-      };
-      reader.readAsDataURL(file);
-    });
+    setIsCompressing(true);
+    try {
+      const compressedList = await Promise.all(
+        Array.from(files).map(file => compressImage(file))
+      );
+      setPhotos(prev => [...prev, ...compressedList]);
+    } catch (err) {
+      console.error('Lỗi nén ảnh:', err);
+    } finally {
+      setIsCompressing(false);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
   };
 
   const removePhoto = (index: number) => {
@@ -268,11 +277,18 @@ export const ConfirmTransferModal: React.FC<ConfirmTransferModalProps> = ({
 
                   <button
                     type="button"
+                    disabled={isCompressing}
                     onClick={() => fileInputRef.current?.click()}
-                    className="aspect-square rounded-xl border-2 border-dashed border-slate-300 hover:border-emerald-500 bg-slate-50 hover:bg-emerald-50/50 flex flex-col items-center justify-center gap-1 text-slate-500 hover:text-emerald-700 transition"
+                    className="aspect-square rounded-xl border-2 border-dashed border-slate-300 hover:border-emerald-500 bg-slate-50 hover:bg-emerald-50/50 flex flex-col items-center justify-center gap-1 text-slate-500 hover:text-emerald-700 transition disabled:opacity-50"
                   >
-                    <Camera className="w-5 h-5" />
-                    <span className="text-[10px] font-bold">Chụp ảnh</span>
+                    {isCompressing ? (
+                      <div className="w-5 h-5 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" />
+                    ) : (
+                      <Camera className="w-5 h-5" />
+                    )}
+                    <span className="text-[10px] font-bold">
+                      {isCompressing ? 'Đang nén...' : 'Chụp ảnh'}
+                    </span>
                   </button>
                 </div>
 
@@ -349,11 +365,11 @@ export const ConfirmTransferModal: React.FC<ConfirmTransferModalProps> = ({
                 <button
                   type="button"
                   onClick={handleConfirm}
-                  disabled={!canConfirm}
+                  disabled={!canConfirm || isCompressing}
                   className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-bold rounded-xl shadow-md shadow-emerald-600/25 flex items-center gap-2 transition"
                 >
                   <CheckCircle2 className="w-4 h-4" />
-                  Xác nhận đã nhận máy
+                  {isCompressing ? 'Đang nén ảnh...' : 'Xác nhận đã nhận máy'}
                 </button>
               )}
             </div>

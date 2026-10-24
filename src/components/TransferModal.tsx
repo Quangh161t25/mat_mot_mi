@@ -3,6 +3,7 @@
 import React, { useState, useRef } from 'react';
 import { useApp } from '@/context/AppContext';
 import { Asset, TransferType } from '@/types';
+import { compressImage } from '@/lib/image-utils';
 import { 
   ArrowRightLeft, 
   X, 
@@ -40,9 +41,12 @@ export const TransferModal: React.FC<TransferModalProps> = ({
   const [giverNotes, setGiverNotes] = useState<string>('');
   const [photos, setPhotos] = useState<string[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isCompressing, setIsCompressing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const prevIsOpenRef = useRef(false);
+  const prevAssetIdRef = useRef<string | null>(null);
 
   const handleClose = () => {
     setToUserId('');
@@ -57,7 +61,10 @@ export const TransferModal: React.FC<TransferModalProps> = ({
   };
 
   React.useEffect(() => {
-    if (isOpen) {
+    const isOpening = isOpen && !prevIsOpenRef.current;
+    const isNewAsset = isOpen && preSelectedAsset && preSelectedAsset.id !== prevAssetIdRef.current;
+
+    if (isOpening || isNewAsset) {
       const targetAsset = preSelectedAsset || (assets.length > 0 ? assets[0] : null);
       if (targetAsset) {
         setSelectedAssetId(targetAsset.id);
@@ -75,18 +82,24 @@ export const TransferModal: React.FC<TransferModalProps> = ({
         setTransferType('borrow');
       }
 
-      // Xóa sạch hoàn toàn dữ liệu giao dịch cũ (ảnh hiện trạng, ghi chú, người nhận) để không bao giờ bị lưu vết từ thiết bị trước
-      setToUserId('');
-      setDueDate(new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]);
-      setGiverNotes('');
-      setPhotos([]);
-      setError(null);
-      setIsSubmitting(false);
-      if (fileInputRef.current) {
-        fileInputRef.current.value = '';
+      // CHỈ RESET DỮ LIỆU KHI MỞ MỚI MODAL
+      // TUYỆT ĐỐI KHÔNG RESET KHI NGƯỜI DÙNG ĐANG ĐIỀN FORM HOẶC QUAY LẠI TỪ CAMERA / TAB ĐIỆN THOẠI
+      if (isOpening) {
+        setToUserId('');
+        setDueDate(new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]);
+        setGiverNotes('');
+        setPhotos([]);
+        setError(null);
+        setIsSubmitting(false);
+        if (fileInputRef.current) {
+          fileInputRef.current.value = '';
+        }
       }
     }
-  }, [isOpen, preSelectedAsset, assets, currentUser]);
+
+    prevIsOpenRef.current = isOpen;
+    prevAssetIdRef.current = preSelectedAsset?.id || null;
+  }, [isOpen, preSelectedAsset?.id]);
 
   if (!isOpen) return null;
 
@@ -96,19 +109,25 @@ export const TransferModal: React.FC<TransferModalProps> = ({
     p => p.status === 'active' && (transferType === 'borrow' ? true : p.id !== currentUser.id)
   );
 
-  const handlePhotoCapture = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handlePhotoCapture = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
 
-    Array.from(files).forEach(file => {
-      const reader = new FileReader();
-      reader.onload = ev => {
-        if (ev.target?.result) {
-          setPhotos(prev => [...prev, ev.target!.result as string]);
-        }
-      };
-      reader.readAsDataURL(file);
-    });
+    setIsCompressing(true);
+    try {
+      const compressedList = await Promise.all(
+        Array.from(files).map(file => compressImage(file))
+      );
+      setPhotos(prev => [...prev, ...compressedList]);
+    } catch (err) {
+      console.error('Lỗi nén ảnh:', err);
+    } finally {
+      setIsCompressing(false);
+      // Reset input để người dùng có thể chọn thêm ảnh mới bất cứ lúc nào
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
   };
 
   const removePhoto = (index: number) => {
@@ -353,11 +372,18 @@ export const TransferModal: React.FC<TransferModalProps> = ({
 
               <button
                 type="button"
+                disabled={isCompressing}
                 onClick={() => fileInputRef.current?.click()}
-                className="aspect-square rounded-xl border-2 border-dashed border-slate-300 hover:border-orange-500 bg-slate-50 hover:bg-orange-50/50 flex flex-col items-center justify-center gap-1 text-slate-500 hover:text-orange-600 transition"
+                className="aspect-square rounded-xl border-2 border-dashed border-slate-300 hover:border-orange-500 bg-slate-50 hover:bg-orange-50/50 flex flex-col items-center justify-center gap-1 text-slate-500 hover:text-orange-600 transition disabled:opacity-50"
               >
-                <Camera className="w-5 h-5" />
-                <span className="text-[10px] font-bold">Chụp / Chọn ảnh</span>
+                {isCompressing ? (
+                  <div className="w-5 h-5 border-2 border-orange-500 border-t-transparent rounded-full animate-spin" />
+                ) : (
+                  <Camera className="w-5 h-5" />
+                )}
+                <span className="text-[10px] font-bold">
+                  {isCompressing ? 'Đang nén...' : 'Chụp / Chọn ảnh'}
+                </span>
               </button>
             </div>
 
@@ -408,11 +434,11 @@ export const TransferModal: React.FC<TransferModalProps> = ({
             </button>
             <button
               type="submit"
-              disabled={isSubmitting}
+              disabled={isSubmitting || isCompressing}
               className="px-5 py-2.5 bg-orange-600 hover:bg-orange-500 disabled:opacity-50 text-white text-xs font-bold rounded-xl shadow-md shadow-orange-600/25 flex items-center gap-2 transition"
             >
               <Check className="w-4 h-4" />
-              {isSubmitting ? 'Đang gửi...' : 'Gửi yêu cầu bàn giao'}
+              {isSubmitting ? 'Đang gửi...' : isCompressing ? 'Đang nén ảnh...' : 'Gửi yêu cầu bàn giao'}
             </button>
           </div>
         </form>
