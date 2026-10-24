@@ -38,6 +38,19 @@ export const ConfirmTransferModal: React.FC<ConfirmTransferModalProps> = ({
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
+  React.useEffect(() => {
+    if (isOpen) {
+      setReceiverNotes('');
+      setPhotos([]);
+      setRejectReason('');
+      setIsRejecting(false);
+      setError(null);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
+  }, [isOpen, transfer?.id]);
+
   if (!isOpen || !transfer) return null;
 
   const isRecipient = currentUser.id === transfer.to_user_id;

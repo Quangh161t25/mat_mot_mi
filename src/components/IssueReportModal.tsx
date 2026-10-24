@@ -20,6 +20,13 @@ export const IssueReportModal: React.FC<IssueReportModalProps> = ({
   const [reason, setReason] = useState<AlertReason>('damaged');
   const [notes, setNotes] = useState('');
 
+  React.useEffect(() => {
+    if (isOpen) {
+      setReason('damaged');
+      setNotes('');
+    }
+  }, [isOpen, asset?.id]);
+
   if (!isOpen || !asset) return null;
 
   const isCurrentlyInAlert = asset.status === 'alert';

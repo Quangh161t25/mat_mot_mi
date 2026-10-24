@@ -44,26 +44,56 @@ export const TransferModal: React.FC<TransferModalProps> = ({
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
+  const handleClose = () => {
+    setToUserId('');
+    setGiverNotes('');
+    setPhotos([]);
+    setError(null);
+    setIsSubmitting(false);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+    onClose();
+  };
+
   React.useEffect(() => {
-    if (preSelectedAsset) {
-      setSelectedAssetId(preSelectedAsset.id);
-      setLocationAfter(preSelectedAsset.location);
-      if (preSelectedAsset.current_holder_id === currentUser.id) {
-        setTransferType('peer_transfer');
-      } else if (!preSelectedAsset.current_holder_id) {
+    if (isOpen) {
+      const targetAsset = preSelectedAsset || (assets.length > 0 ? assets[0] : null);
+      if (targetAsset) {
+        setSelectedAssetId(targetAsset.id);
+        setLocationAfter(targetAsset.location || '');
+        if (targetAsset.current_holder_id === currentUser.id) {
+          setTransferType('peer_transfer');
+        } else if (!targetAsset.current_holder_id) {
+          setTransferType('borrow');
+        } else {
+          setTransferType('peer_transfer');
+        }
+      } else {
+        setSelectedAssetId('');
+        setLocationAfter('');
         setTransferType('borrow');
       }
-    } else {
-      setSelectedAssetId(assets[0]?.id || '');
+
+      // Xóa sạch hoàn toàn dữ liệu giao dịch cũ (ảnh hiện trạng, ghi chú, người nhận) để không bao giờ bị lưu vết từ thiết bị trước
+      setToUserId('');
+      setDueDate(new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]);
+      setGiverNotes('');
+      setPhotos([]);
+      setError(null);
+      setIsSubmitting(false);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
     }
-  }, [preSelectedAsset, isOpen, assets, currentUser]);
+  }, [isOpen, preSelectedAsset, assets, currentUser]);
 
   if (!isOpen) return null;
 
   const currentSelectedAsset = assets.find(a => a.id === selectedAssetId);
 
   const availableReceivers = profiles.filter(
-    p => p.status === 'active' && p.id !== currentUser.id
+    p => p.status === 'active' && (transferType === 'borrow' ? true : p.id !== currentUser.id)
   );
 
   const handlePhotoCapture = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -119,7 +149,7 @@ export const TransferModal: React.FC<TransferModalProps> = ({
     setIsSubmitting(false);
 
     if (result.success) {
-      onClose();
+      handleClose();
     } else {
       setError(result.error || 'Có lỗi xảy ra khi tạo bàn giao');
     }
@@ -144,7 +174,8 @@ export const TransferModal: React.FC<TransferModalProps> = ({
             </div>
           </div>
           <button
-            onClick={onClose}
+            type="button"
+            onClick={handleClose}
             className="p-2 text-slate-400 hover:text-slate-700 rounded-xl hover:bg-slate-100 transition"
           >
             <X className="w-5 h-5" />
@@ -168,9 +199,25 @@ export const TransferModal: React.FC<TransferModalProps> = ({
             <select
               value={selectedAssetId}
               onChange={e => {
-                setSelectedAssetId(e.target.value);
-                const asset = assets.find(a => a.id === e.target.value);
-                if (asset) setLocationAfter(asset.location);
+                const newId = e.target.value;
+                setSelectedAssetId(newId);
+                const asset = assets.find(a => a.id === newId);
+                if (asset) {
+                  setLocationAfter(asset.location || '');
+                  if (asset.current_holder_id === currentUser.id) {
+                    setTransferType('peer_transfer');
+                  } else if (!asset.current_holder_id) {
+                    setTransferType('borrow');
+                  } else {
+                    setTransferType('peer_transfer');
+                  }
+                }
+                // Reset ảnh và ghi chú khi đổi thiết bị để không nhầm hiện trạng
+                setPhotos([]);
+                setGiverNotes('');
+                if (fileInputRef.current) {
+                  fileInputRef.current.value = '';
+                }
               }}
               className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 focus:outline-none focus:border-orange-500 focus:bg-white font-medium"
               required
@@ -235,7 +282,7 @@ export const TransferModal: React.FC<TransferModalProps> = ({
                 <option value="">-- Chọn nhân sự nhận --</option>
                 {availableReceivers.map(p => (
                   <option key={p.id} value={p.id}>
-                    {p.full_name} ({p.role === 'admin' ? 'Admin' : p.role === 'manager' ? 'Quản lý' : 'Nhân sự'})
+                    {p.full_name} {p.id === currentUser.id ? '(Chính bạn)' : `(${p.role === 'admin' ? 'Admin' : p.role === 'manager' ? 'Quản lý' : 'Nhân sự'})`}
                   </option>
                 ))}
               </select>
@@ -354,7 +401,7 @@ export const TransferModal: React.FC<TransferModalProps> = ({
           <div className="pt-2 flex items-center justify-end gap-3 border-t border-slate-100">
             <button
               type="button"
-              onClick={onClose}
+              onClick={handleClose}
               className="px-4 py-2 text-xs font-semibold text-slate-500 hover:text-slate-800"
             >
               Hủy

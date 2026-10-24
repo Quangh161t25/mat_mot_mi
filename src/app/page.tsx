@@ -39,6 +39,7 @@ export default function DashboardPage() {
   
   // Modals
   const [isTransferModalOpen, setIsTransferModalOpen] = useState(false);
+  const [selectedAssetForTransfer, setSelectedAssetForTransfer] = useState<Asset | null>(null);
   const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
   const [selectedTransferForConfirm, setSelectedTransferForConfirm] = useState<TransferRecord | null>(null);
   const [selectedAssetForIssue, setSelectedAssetForIssue] = useState<Asset | null>(null);
@@ -91,7 +92,10 @@ export default function DashboardPage() {
 
         <div className="flex flex-wrap items-center gap-2.5">
           <button
-            onClick={() => setIsTransferModalOpen(true)}
+            onClick={() => {
+              setSelectedAssetForTransfer(null);
+              setIsTransferModalOpen(true);
+            }}
             className="flex items-center gap-2 px-4 py-2.5 bg-orange-600 hover:bg-orange-500 text-white rounded-xl text-xs sm:text-sm font-bold shadow-md shadow-orange-600/25 transition active:scale-95"
           >
             <ArrowRightLeft className="w-4 h-4" />
@@ -430,7 +434,10 @@ export default function DashboardPage() {
                   </button>
 
                   <button
-                    onClick={() => setIsTransferModalOpen(true)}
+                    onClick={() => {
+                      setSelectedAssetForTransfer(asset);
+                      setIsTransferModalOpen(true);
+                    }}
                     className="px-3 py-1.5 bg-orange-50 hover:bg-orange-600 hover:text-white text-orange-700 border border-orange-200 font-bold rounded-lg text-xs transition"
                   >
                     Bàn giao
@@ -445,7 +452,11 @@ export default function DashboardPage() {
       {/* MODALS */}
       <TransferModal
         isOpen={isTransferModalOpen}
-        onClose={() => setIsTransferModalOpen(false)}
+        onClose={() => {
+          setIsTransferModalOpen(false);
+          setSelectedAssetForTransfer(null);
+        }}
+        preSelectedAsset={selectedAssetForTransfer}
       />
 
       <ConfirmTransferModal
