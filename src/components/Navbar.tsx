@@ -265,15 +265,16 @@ export const Navbar: React.FC = () => {
 
                     <button
                       onClick={() => {
-                        if (confirm('Khôi phục dữ liệu mẫu ban đầu của Mắt Một Mí Media?')) {
+                        if (confirm('Làm sạch toàn bộ dữ liệu trên máy để bắt đầu nhập mới từ đầu?')) {
                           resetToDemoData();
                           setIsUserMenuOpen(false);
+                          window.location.reload();
                         }
                       }}
                       className="w-full py-1.5 px-2 text-slate-500 hover:text-slate-800 hover:bg-slate-50 rounded-xl text-[11px] flex items-center gap-2 transition"
                     >
                       <RotateCcw className="w-3.5 h-3.5 text-orange-600" />
-                      <span>Đặt lại dữ liệu mẫu Studio</span>
+                      <span>Xóa dữ liệu cũ (Bắt đầu thêm mới)</span>
                     </button>
                   </div>
                 </div>
