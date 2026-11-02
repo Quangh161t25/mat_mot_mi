@@ -25,6 +25,7 @@ import {
   Users, 
   ClipboardCheck, 
   History, 
+  Clock,
   Sparkles,
   RotateCcw,
   Sliders
@@ -72,6 +73,7 @@ export default function PermissionsPage() {
         staff: { view: true, create: false, edit: false, delete: false },
         audit: { view: true, create: false, edit: false, delete: false },
         logs: { view: true },
+        attendance: { view: true, create: false, edit: false, delete: false },
       });
     } else {
       setEditingPermissions(JSON.parse(JSON.stringify(DEFAULT_PERMISSIONS_BY_ROLE[presetKey])));
@@ -79,14 +81,14 @@ export default function PermissionsPage() {
   };
 
   const handleToggleCrud = (
-    module: 'assets' | 'transfers' | 'staff' | 'audit', 
+    module: 'assets' | 'transfers' | 'staff' | 'audit' | 'attendance', 
     field: keyof CrudPermissions
   ) => {
     setEditingPermissions(prev => ({
       ...prev,
       [module]: {
-        ...prev[module],
-        [field]: !prev[module][field],
+        ...(prev[module] || { view: true, create: true, edit: false, delete: false }),
+        [field]: !(prev[module]?.[field]),
       }
     }));
   };
@@ -221,7 +223,7 @@ export default function PermissionsPage() {
               </div>
 
               {/* Permissions Grid Matrix Summary */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 text-xs">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3 text-xs">
                 {/* 1. Thiết Bị */}
                 <div className="p-3 rounded-xl bg-slate-50 border border-slate-100 space-y-2">
                   <div className="font-bold text-slate-800 flex items-center gap-1.5">
@@ -310,7 +312,26 @@ export default function PermissionsPage() {
                   </div>
                 </div>
 
-                {/* 5. Nhật Ký */}
+                {/* 5. Chấm Công */}
+                <div className="p-3 rounded-xl bg-slate-50 border border-slate-100 space-y-2">
+                  <div className="font-bold text-slate-800 flex items-center gap-1.5">
+                    <Clock className="w-3.5 h-3.5 text-amber-600" />
+                    <span>Chấm Công</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-1 text-[11px]">
+                    <span className={`px-1.5 py-0.5 rounded text-center font-semibold ${(perms.attendance?.view ?? true) ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200/60 text-slate-400'}`}>
+                      Xem: {(perms.attendance?.view ?? true) ? '✓' : '✕'}
+                    </span>
+                    <span className={`px-1.5 py-0.5 rounded text-center font-semibold ${(perms.attendance?.create ?? true) ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200/60 text-slate-400'}`}>
+                      Chấm: {(perms.attendance?.create ?? true) ? '✓' : '✕'}
+                    </span>
+                    <span className={`col-span-2 px-1.5 py-0.5 rounded text-center font-semibold ${perms.attendance?.delete ? 'bg-rose-100 text-rose-800' : 'bg-slate-200/60 text-slate-400'}`}>
+                      Xóa record: {perms.attendance?.delete ? '✓' : '✕'}
+                    </span>
+                  </div>
+                </div>
+
+                {/* 6. Nhật Ký */}
                 <div className="p-3 rounded-xl bg-slate-50 border border-slate-100 space-y-2">
                   <div className="font-bold text-slate-800 flex items-center gap-1.5">
                     <History className="w-3.5 h-3.5 text-slate-700" />
@@ -616,7 +637,49 @@ export default function PermissionsPage() {
                   </div>
                 </div>
 
-                {/* 5. Nhật Ký */}
+                {/* 5. Chấm Công */}
+                <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-slate-900 flex items-center gap-2">
+                      <Clock className="w-4 h-4 text-amber-600" />
+                      Module Chấm Công (GPS Check-in)
+                    </span>
+                    <span className="text-[11px] text-slate-500">Chấm công tại Studio & Đi show cưới</span>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1 border-t border-slate-200/60">
+                    <label className="flex items-center gap-2 cursor-pointer p-2 rounded-xl bg-white border border-slate-200 hover:border-amber-400">
+                      <input
+                        type="checkbox"
+                        checked={editingPermissions.attendance?.view ?? true}
+                        onChange={() => handleToggleCrud('attendance', 'view')}
+                        className="rounded text-amber-600 focus:ring-amber-500 w-4 h-4"
+                      />
+                      <span className="font-semibold text-slate-700">👁️ Xem DS chấm công</span>
+                    </label>
+
+                    <label className="flex items-center gap-2 cursor-pointer p-2 rounded-xl bg-white border border-slate-200 hover:border-amber-400">
+                      <input
+                        type="checkbox"
+                        checked={editingPermissions.attendance?.create ?? true}
+                        onChange={() => handleToggleCrud('attendance', 'create')}
+                        className="rounded text-amber-600 focus:ring-amber-500 w-4 h-4"
+                      />
+                      <span className="font-semibold text-slate-700">➕ Thực hiện chấm công</span>
+                    </label>
+
+                    <label className="flex items-center gap-2 cursor-pointer p-2 rounded-xl bg-white border border-slate-200 hover:border-rose-400">
+                      <input
+                        type="checkbox"
+                        checked={editingPermissions.attendance?.delete ?? false}
+                        onChange={() => handleToggleCrud('attendance', 'delete')}
+                        className="rounded text-rose-600 focus:ring-rose-500 w-4 h-4"
+                      />
+                      <span className="font-semibold text-rose-700">🗑️ Xóa bản ghi (Admin/QL)</span>
+                    </label>
+                  </div>
+                </div>
+
+                {/* 6. Nhật Ký */}
                 <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 space-y-2.5">
                   <div className="flex items-center justify-between">
                     <span className="font-bold text-slate-900 flex items-center gap-2">

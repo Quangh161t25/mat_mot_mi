@@ -21,6 +21,8 @@ import {
   updateStaffPermissionsInSheet,
   appendComboToSheet,
   deleteComboFromSheet,
+  appendAttendanceToSheet,
+  deleteAttendanceFromSheet,
   SPREADSHEET_ID, 
   getSheetsClient,
   getGoogleAuthDiagnostics
@@ -236,6 +238,15 @@ export async function POST(req: Request) {
             });
           }
         }
+        return NextResponse.json({ success: true }, { headers: corsAndNoCacheHeaders });
+
+      // 7. Chấm công (CHAM_CONG)
+      case 'append_attendance':
+        await appendAttendanceToSheet(payload.record);
+        return NextResponse.json({ success: true }, { headers: corsAndNoCacheHeaders });
+
+      case 'delete_attendance':
+        await deleteAttendanceFromSheet(payload.id);
         return NextResponse.json({ success: true }, { headers: corsAndNoCacheHeaders });
 
       default:

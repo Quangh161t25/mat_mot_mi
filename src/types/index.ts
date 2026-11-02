@@ -14,6 +14,7 @@ export interface UserPermissions {
   staff: CrudPermissions;      // Nhân sự: xem, thêm, sửa, xóa
   audit: CrudPermissions;      // Kiểm kê: xem, thêm, sửa, xóa
   logs: { view: boolean };     // Nhật ký: xem
+  attendance?: CrudPermissions;// Chấm công: xem, thêm, sửa, xóa
 }
 
 export const DEFAULT_PERMISSIONS_BY_ROLE: Record<UserRole, UserPermissions> = {
@@ -23,6 +24,7 @@ export const DEFAULT_PERMISSIONS_BY_ROLE: Record<UserRole, UserPermissions> = {
     staff: { view: true, create: true, edit: true, delete: true },
     audit: { view: true, create: true, edit: true, delete: true },
     logs: { view: true },
+    attendance: { view: true, create: true, edit: true, delete: true },
   },
   manager: {
     assets: { view: true, create: true, edit: true, delete: true },
@@ -30,6 +32,7 @@ export const DEFAULT_PERMISSIONS_BY_ROLE: Record<UserRole, UserPermissions> = {
     staff: { view: true, create: false, edit: false, delete: false },
     audit: { view: true, create: true, edit: true, delete: false },
     logs: { view: true },
+    attendance: { view: true, create: true, edit: true, delete: true },
   },
   staff: {
     assets: { view: true, create: false, edit: false, delete: false },
@@ -37,6 +40,7 @@ export const DEFAULT_PERMISSIONS_BY_ROLE: Record<UserRole, UserPermissions> = {
     staff: { view: false, create: false, edit: false, delete: false },
     audit: { view: true, create: false, edit: true, delete: false },
     logs: { view: false },
+    attendance: { view: true, create: true, edit: false, delete: false },
   },
 };
 
@@ -142,6 +146,29 @@ export interface EquipmentCombo {
   created_at: string;
 }
 
+export type AttendanceType = 
+  | 'check_in'       // Vào ca (Tại studio)
+  | 'check_out'      // Tan ca (Tại studio)
+  | 'show_check_in'  // Có mặt tại show cưới / sự kiện
+  | 'show_check_out';// Kết thúc show cưới / sự kiện
+
+export interface AttendanceRecord {
+  id: string;
+  user_id: string;
+  user_name: string;
+  user_role: UserRole;
+  user_avatar?: string;
+  timestamp: string; // ISO string
+  type: AttendanceType;
+  location_name: string;
+  latitude?: number | null;
+  longitude?: number | null;
+  accuracy?: number | null; // meters
+  map_url?: string;
+  photo_url?: string;
+  notes?: string;
+}
+
 export interface AuditSession {
   id: string;
   title: string;
@@ -211,9 +238,12 @@ export type LogAction =
   | 'permissions_update'
   | 'combo_create'
   | 'combo_delete'
-  | 'combo_transfer';
+  | 'combo_transfer'
+  | 'attendance_check_in'
+  | 'attendance_check_out'
+  | 'attendance_delete';
 
-export type LogModule = 'Thiết bị' | 'Mượn – Trả' | 'Nhân sự' | 'Kiểm kê' | 'Hệ thống' | 'Phân quyền' | 'Combo';
+export type LogModule = 'Thiết bị' | 'Mượn – Trả' | 'Nhân sự' | 'Kiểm kê' | 'Hệ thống' | 'Phân quyền' | 'Combo' | 'Chấm công';
 
 export interface ActivityLog {
   id: string;

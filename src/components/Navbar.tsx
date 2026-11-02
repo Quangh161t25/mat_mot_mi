@@ -20,7 +20,8 @@ import {
   KeyRound,
   LogOut,
   LogIn,
-  ShieldCheck
+  ShieldCheck,
+  Clock
 } from 'lucide-react';
 import { QRScannerModal } from './QRScannerModal';
 import { InstallAppModal } from './InstallAppModal';
@@ -54,7 +55,8 @@ export const Navbar: React.FC = () => {
     canViewTransfers,
     canViewAudit,
     canViewStaff,
-    canViewLogs
+    canViewLogs,
+    canViewAttendance
   } = useApp();
 
   const [isScannerOpen, setIsScannerOpen] = useState(false);
@@ -74,6 +76,7 @@ export const Navbar: React.FC = () => {
       badge: pendingTransfersCount > 0 ? pendingTransfersCount : null,
       visible: canViewTransfers
     },
+    { href: '/attendance', label: 'Chấm Công', icon: Clock, visible: canViewAttendance },
     { href: '/audit', label: 'Kiểm Kê', icon: ClipboardCheck, visible: canViewAudit },
     { href: '/staff', label: 'Nhân Sự', icon: Users, visible: canViewStaff },
     { href: '/permissions', label: 'Phân Quyền', icon: ShieldCheck, visible: isAdmin || isManager },

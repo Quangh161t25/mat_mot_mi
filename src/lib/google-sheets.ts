@@ -1,7 +1,7 @@
 import { google } from 'googleapis';
 import path from 'path';
 import fs from 'fs';
-import { Asset, UserProfile, TransferRecord, AuditItem, AuditSession, ActivityLog, UserPermissions, EquipmentCombo } from '@/types';
+import { Asset, UserProfile, TransferRecord, AuditItem, AuditSession, ActivityLog, UserPermissions, EquipmentCombo, AttendanceRecord } from '@/types';
 import { INITIAL_PROFILES } from '@/lib/mock-data';
 
 export const SPREADSHEET_ID = 
@@ -202,12 +202,13 @@ export async function fetchAllFromSheets(forceRefresh = false) {
         'KIEM_KE!A2:M1000',
         'NHAT_KY!A2:I1000',
         'COMBO!A2:H500',
+        'CHAM_CONG!A2:L2000',
       ],
     });
 
     const batchRes: any = await Promise.race([batchPromise, timeoutPromise]);
 
-    const [assetsRange, staffRange, transfersRange, auditRange, logsRange, combosRange] = batchRes.data.valueRanges || [];
+    const [assetsRange, staffRange, transfersRange, auditRange, logsRange, combosRange, attendanceRange] = batchRes.data.valueRanges || [];
 
     // Parse THIET_BI
     const assets: Asset[] = (assetsRange?.values || [])
@@ -372,7 +373,39 @@ export async function fetchAllFromSheets(forceRefresh = false) {
         };
       });
 
-    const result = { assets, profiles, transfers, auditItems, auditSessions, logs, combos };
+    // Parse CHAM_CONG
+    const attendance: AttendanceRecord[] = (attendanceRange?.values || [])
+      .filter((row: any) => row[0] && row[0].toString().trim() !== '')
+      .map((row: any, idx: number) => {
+        let lat = null;
+        let lng = null;
+        if (row[7]) {
+          const parts = row[7].toString().split(',').map((p: string) => parseFloat(p.trim()));
+          if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
+            lat = parts[0];
+            lng = parts[1];
+          }
+        }
+
+        return {
+          id: row[0] || `att-${idx + 1}`,
+          user_id: row[1] || '',
+          user_name: row[2] || 'Nhân sự',
+          user_role: (row[3] || 'staff') as any,
+          timestamp: row[4] || new Date().toISOString(),
+          type: (row[5] || 'check_in') as any,
+          location_name: row[6] || 'Kho Studio',
+          latitude: lat,
+          longitude: lng,
+          map_url: row[8] || (lat && lng ? `https://www.google.com/maps?q=${lat},${lng}` : undefined),
+          accuracy: row[9] ? parseFloat(row[9]) : undefined,
+          photo_url: row[10] || '',
+          notes: row[11] || '',
+        };
+      })
+      .reverse();
+
+    const result = { assets, profiles, transfers, auditItems, auditSessions, logs, combos, attendance };
     cachedData = result;
     lastFetchTimestamp = Date.now();
     writeDiskCache(result);
@@ -397,6 +430,7 @@ export async function fetchAllFromSheets(forceRefresh = false) {
       auditSessions: [],
       logs: [],
       combos: [],
+      attendance: [],
     };
   }
 }
@@ -971,5 +1005,61 @@ export async function deleteComboFromSheet(comboId: string) {
   await sheets.spreadsheets.values.clear({
     spreadsheetId: SPREADSHEET_ID,
     range: `COMBO!A${actualRow}:H${actualRow}`,
+  });
+}
+
+// ==========================================
+// 8. CÁC HÀM CHẤM CÔNG (CHAM_CONG)
+// ==========================================
+
+export async function appendAttendanceToSheet(record: AttendanceRecord) {
+  invalidateSheetsCache();
+  const sheets = getSheetsClient();
+  if (!sheets) throw new Error('Google Sheets chưa sẵn sàng');
+
+  const latLngStr = (record.latitude && record.longitude) ? `${record.latitude}, ${record.longitude}` : '';
+  const mapUrl = record.map_url || ((record.latitude && record.longitude) ? `https://www.google.com/maps?q=${record.latitude},${record.longitude}` : '');
+
+  const row = [
+    record.id,
+    record.user_id,
+    record.user_name,
+    record.user_role,
+    record.timestamp,
+    record.type,
+    record.location_name,
+    latLngStr,
+    mapUrl,
+    record.accuracy ? Math.round(record.accuracy) : '',
+    record.photo_url || '',
+    record.notes || '',
+  ];
+
+  await sheets.spreadsheets.values.append({
+    spreadsheetId: SPREADSHEET_ID,
+    range: 'CHAM_CONG!A2',
+    valueInputOption: 'USER_ENTERED',
+    requestBody: { values: [row] },
+  });
+}
+
+export async function deleteAttendanceFromSheet(attendanceId: string) {
+  invalidateSheetsCache();
+  const sheets = getSheetsClient();
+  if (!sheets) throw new Error('Google Sheets chưa sẵn sàng');
+
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId: SPREADSHEET_ID,
+    range: 'CHAM_CONG!A2:L2000',
+  });
+
+  const rows = res.data.values || [];
+  const rowIndex = rows.findIndex(r => r[0] && r[0].toString().trim() === attendanceId.trim());
+  if (rowIndex === -1) return;
+
+  const actualRow = rowIndex + 2;
+  await sheets.spreadsheets.values.clear({
+    spreadsheetId: SPREADSHEET_ID,
+    range: `CHAM_CONG!A${actualRow}:L${actualRow}`,
   });
 }

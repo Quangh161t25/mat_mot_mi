@@ -17,7 +17,9 @@ import {
   UserPermissions,
   getUserPermissions,
   DEFAULT_PERMISSIONS_BY_ROLE,
-  EquipmentCombo
+  EquipmentCombo,
+  AttendanceRecord,
+  AttendanceType
 } from '@/types';
 import { 
   INITIAL_PROFILES, 
@@ -58,7 +60,7 @@ interface AppContextType {
   googleSheetsError: string | null;
   googleSheetUrl: string;
   isSyncing: boolean;
-  syncWithGoogleSheets: () => Promise<void>;
+  syncWithGoogleSheets: (fresh?: boolean) => Promise<void>;
   
   // Permissions & Access Control (Xem / Thêm / Sửa / Xóa)
   isAdmin: boolean;
@@ -85,6 +87,9 @@ interface AppContextType {
   canEditAudit: boolean;
   canDeleteAudit: boolean;
   canViewLogs: boolean;
+  canViewAttendance: boolean;
+  canCreateAttendance: boolean;
+  canDeleteAttendance: boolean;
   
   // Staff / User Management
   addProfile: (profile: Omit<UserProfile, 'id' | 'created_at'>) => void;
@@ -131,6 +136,19 @@ interface AppContextType {
     receiverNotes?: string, 
     receiverPhotos?: string[]
   ) => { success: boolean; error?: string; count?: number };
+
+  // Attendance Management (Chấm công GPS & Danh sách chấm công)
+  attendance: AttendanceRecord[];
+  recordAttendance: (data: {
+    type: AttendanceType;
+    locationName: string;
+    latitude?: number | null;
+    longitude?: number | null;
+    accuracy?: number | null;
+    photoUrl?: string;
+    notes?: string;
+  }) => { success: boolean; record?: AttendanceRecord; error?: string };
+  deleteAttendance: (id: string) => void;
   
   updateTransfer: (id: string, updates: Partial<TransferRecord>) => void;
   deleteTransfer: (id: string) => void;
@@ -188,6 +206,7 @@ const STORAGE_KEYS = {
   NOTIFICATIONS: 'mmm_notifications',
   LOGS: 'mmm_activity_logs',
   COMBOS: 'mmm_combos',
+  ATTENDANCE: 'mmm_attendance',
 };
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -201,6 +220,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [notifications, setNotifications] = useState<AppNotification[]>(INITIAL_NOTIFICATIONS);
   const [logs, setLogs] = useState<ActivityLog[]>(INITIAL_LOGS);
   const [combos, setCombos] = useState<EquipmentCombo[]>([]);
+  const [attendance, setAttendance] = useState<AttendanceRecord[]>([]);
   
   const [googleSheetsStatus, setGoogleSheetsStatus] = useState<'loading' | 'connected' | 'error'>('loading');
   const [googleSheetsError, setGoogleSheetsError] = useState<string | null>(null);
@@ -365,6 +385,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               localStorage.setItem(STORAGE_KEYS.COMBOS, JSON.stringify(json.data.combos));
             } catch (e) {}
           }
+          // 7. Đồng bộ Chấm công
+          if (Array.isArray(json.data.attendance)) {
+            setAttendance(json.data.attendance);
+            try {
+              localStorage.setItem(STORAGE_KEYS.ATTENDANCE, JSON.stringify(json.data.attendance));
+            } catch (e) {}
+          }
         }
         syncFailuresRef.current = 0;
         lastSyncTimeRef.current = Date.now();
@@ -428,6 +455,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const storedUser = localStorage.getItem(STORAGE_KEYS.CURRENT_USER);
       const storedLogs = localStorage.getItem(STORAGE_KEYS.LOGS);
       const storedCombos = localStorage.getItem(STORAGE_KEYS.COMBOS);
+      const storedAttendance = localStorage.getItem(STORAGE_KEYS.ATTENDANCE);
       const storedAuthUserId = localStorage.getItem(STORAGE_KEYS.AUTH_USER_ID);
 
       if (storedProfiles) setProfiles(JSON.parse(storedProfiles));
@@ -438,6 +466,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (storedNotifications) setNotifications(JSON.parse(storedNotifications));
       if (storedLogs) setLogs(JSON.parse(storedLogs));
       if (storedCombos) setCombos(JSON.parse(storedCombos));
+      if (storedAttendance) setAttendance(JSON.parse(storedAttendance));
       
       if (storedUser) {
         const parsed = JSON.parse(storedUser);
@@ -510,10 +539,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       localStorage.setItem(STORAGE_KEYS.AUDIT_ITEMS, JSON.stringify(auditItems));
       localStorage.setItem(STORAGE_KEYS.NOTIFICATIONS, JSON.stringify(notifications));
       localStorage.setItem(STORAGE_KEYS.CURRENT_USER, JSON.stringify(currentUser));
+      localStorage.setItem(STORAGE_KEYS.ATTENDANCE, JSON.stringify(attendance));
     } catch (err) {
       console.error('Lỗi ghi local storage:', err);
     }
-  }, [profiles, assets, transfers, auditSessions, auditItems, notifications, currentUser, isLoaded]);
+  }, [profiles, assets, transfers, auditSessions, auditItems, notifications, currentUser, attendance, isLoaded]);
 
   // Roles check
   const isAdmin = currentUser?.role === 'admin';
@@ -545,6 +575,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const canDeleteAudit = userPermissions.audit.delete;
 
   const canViewLogs = userPermissions.logs.view;
+
+  const canViewAttendance = userPermissions.attendance ? userPermissions.attendance.view : true;
+  const canCreateAttendance = userPermissions.attendance ? userPermissions.attendance.create : true;
+  const canDeleteAttendance = userPermissions.attendance ? userPermissions.attendance.delete : (isAdmin || isManager);
 
   // Helper ghi nhật ký hoạt động
   const addLog = useCallback((action: LogAction, module: LogModule, summary: string, details?: string) => {
@@ -1474,6 +1508,65 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
   };
 
+  // Chấm công GPS & Quản lý danh sách chấm công
+  const recordAttendance = (data: {
+    type: AttendanceType;
+    locationName: string;
+    latitude?: number | null;
+    longitude?: number | null;
+    accuracy?: number | null;
+    photoUrl?: string;
+    notes?: string;
+  }) => {
+    const user = currentUserRef.current;
+    if (!user) return { success: false, error: 'Chưa đăng nhập' };
+
+    const typeLabels: Record<AttendanceType, string> = {
+      check_in: 'Vào ca (Studio)',
+      check_out: 'Tan ca (Studio)',
+      show_check_in: 'Có mặt tại show cưới',
+      show_check_out: 'Kết thúc show cưới',
+    };
+
+    const newRecord: AttendanceRecord = {
+      id: `att-${Date.now()}`,
+      user_id: user.id,
+      user_name: user.full_name,
+      user_role: user.role,
+      user_avatar: user.avatar_url,
+      timestamp: new Date().toISOString(),
+      type: data.type,
+      location_name: data.locationName.trim() || 'Kho Studio',
+      latitude: data.latitude || null,
+      longitude: data.longitude || null,
+      accuracy: data.accuracy || null,
+      map_url: (data.latitude && data.longitude) ? `https://www.google.com/maps?q=${data.latitude},${data.longitude}` : undefined,
+      photo_url: data.photoUrl || '',
+      notes: data.notes?.trim() || '',
+    };
+
+    setAttendance(prev => [newRecord, ...prev]);
+
+    // Đồng bộ sang Google Sheets tab CHAM_CONG
+    dispatchToSheets('append_attendance', { record: newRecord });
+
+    const actionType: LogAction = data.type.includes('check_in') ? 'attendance_check_in' : 'attendance_check_out';
+    addLog(
+      actionType,
+      'Chấm công',
+      `${user.full_name} đã chấm công: ${typeLabels[data.type]} tại ${newRecord.location_name}`,
+      `Tọa độ: ${data.latitude ? `${data.latitude}, ${data.longitude}` : 'Không có GPS'} - Ghi chú: ${data.notes || 'Không có'}`
+    );
+
+    return { success: true, record: newRecord };
+  };
+
+  const deleteAttendance = (id: string) => {
+    setAttendance(prev => prev.filter(a => a.id !== id));
+    dispatchToSheets('delete_attendance', { id });
+    addLog('attendance_delete', 'Chấm công', `Xóa bản ghi chấm công mã ${id}`);
+  };
+
   const resetToDemoData = () => {
     setProfiles(INITIAL_PROFILES);
     setCurrentUser(INITIAL_PROFILES[0]);
@@ -1551,6 +1644,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         canEditAudit,
         canDeleteAudit,
         canViewLogs,
+        canViewAttendance,
+        canCreateAttendance,
+        canDeleteAttendance,
         
         addProfile,
         updateProfile,
@@ -1571,6 +1667,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         deleteCombo,
         initiateComboTransfer,
         confirmComboTransfer,
+        attendance,
+        recordAttendance,
+        deleteAttendance,
         updateTransfer,
         deleteTransfer,
         batchDeleteTransfers,
