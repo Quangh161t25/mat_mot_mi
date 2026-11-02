@@ -203,12 +203,25 @@ export async function fetchAllFromSheets(forceRefresh = false) {
         'NHAT_KY!A2:I1000',
         'COMBO!A2:H500',
         'CHAM_CONG!A2:L2000',
+        'PHAN_QUYEN!A2:K1000',
       ],
     });
 
     const batchRes: any = await Promise.race([batchPromise, timeoutPromise]);
 
-    const [assetsRange, staffRange, transfersRange, auditRange, logsRange, combosRange, attendanceRange] = batchRes.data.valueRanges || [];
+    const [assetsRange, staffRange, transfersRange, auditRange, logsRange, combosRange, attendanceRange, pqRange] = batchRes.data.valueRanges || [];
+
+    // Parse PHAN_QUYEN map
+    const pqMap = new Map<string, any>();
+    if (pqRange?.values) {
+      pqRange.values.forEach((row: any) => {
+        if (row[0] && row[9]) {
+          try {
+            pqMap.set(row[0].toString().trim(), JSON.parse(row[9]));
+          } catch (e) {}
+        }
+      });
+    }
 
     // Parse THIET_BI
     const assets: Asset[] = (assetsRange?.values || [])
@@ -243,6 +256,9 @@ export async function fetchAllFromSheets(forceRefresh = false) {
           try {
             parsedPermissions = typeof row[9] === 'string' ? JSON.parse(row[9]) : row[9];
           } catch (e) {}
+        }
+        if (!parsedPermissions && row[0] && pqMap.has(row[0].toString().trim())) {
+          parsedPermissions = pqMap.get(row[0].toString().trim());
         }
         return {
           id: row[0] || `u-${idx + 1}`,
@@ -640,12 +656,15 @@ export async function updateStaffPermissionsInSheet(userId: string, permissions:
 
   // 2. Ghi bảng phân quyền dễ đọc vào tab PHAN_QUYEN
   try {
-    const fmtCrud = (crud: { view: boolean; create: boolean; edit: boolean; delete: boolean }) => 
-      `Xem: ${crud.view ? 'Có' : 'Không'} | Thêm: ${crud.create ? 'Có' : 'Không'} | Sửa: ${crud.edit ? 'Có' : 'Không'} | Xóa: ${crud.delete ? 'Có' : 'Không'}`;
+    const fmtCrud = (crud?: { view: boolean; create: boolean; edit: boolean; delete: boolean }) => 
+      `Xem: ${crud?.view ? 'Có' : 'Không'} | Thêm/Giao: ${crud?.create ? 'Có' : 'Không'} | Sửa/Quét: ${crud?.edit ? 'Có' : 'Không'} | Xóa: ${crud?.delete ? 'Có' : 'Không'}`;
+
+    const fmtAtt = (att?: { view: boolean; create: boolean; edit?: boolean; delete?: boolean }) =>
+      `Xem: ${att?.view ? 'Có' : 'Không'} | Chấm công: ${att?.create ? 'Có' : 'Không'} | Xóa: ${att?.delete ? 'Có' : 'Không'}`;
 
     const pqRes = await sheets.spreadsheets.values.get({
       spreadsheetId: SPREADSHEET_ID,
-      range: 'PHAN_QUYEN!A2:J1000',
+      range: 'PHAN_QUYEN!A2:K1000',
     });
     const pqRows = pqRes.data.values || [];
     const pqIdx = pqRows.findIndex(r => r[0] && r[0].toString().trim() === userId.trim());
@@ -653,12 +672,13 @@ export async function updateStaffPermissionsInSheet(userId: string, permissions:
     const pqRow = [
       userId,
       userName || userId,
-      userRole,
+      userRole.toUpperCase(),
       fmtCrud(permissions.assets),
       fmtCrud(permissions.transfers),
-      fmtCrud(permissions.staff),
+      fmtAtt(permissions.attendance),
       fmtCrud(permissions.audit),
-      permissions.logs.view ? 'Có xem' : 'Không',
+      fmtCrud(permissions.staff),
+      permissions.logs?.view ? 'Có xem' : 'Không',
       JSON.stringify(permissions),
       new Date().toLocaleString('vi-VN'),
     ];
@@ -667,7 +687,7 @@ export async function updateStaffPermissionsInSheet(userId: string, permissions:
       const actualRow = pqIdx + 2;
       await sheets.spreadsheets.values.update({
         spreadsheetId: SPREADSHEET_ID,
-        range: `PHAN_QUYEN!A${actualRow}:J${actualRow}`,
+        range: `PHAN_QUYEN!A${actualRow}:K${actualRow}`,
         valueInputOption: 'USER_ENTERED',
         requestBody: { values: [pqRow] },
       });
