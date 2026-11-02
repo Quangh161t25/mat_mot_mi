@@ -19,6 +19,8 @@ import {
   deleteAuditSessionInSheet,
   appendLogToSheet,
   updateStaffPermissionsInSheet,
+  appendComboToSheet,
+  deleteComboFromSheet,
   SPREADSHEET_ID, 
   getSheetsClient,
   getGoogleAuthDiagnostics
@@ -213,6 +215,27 @@ export async function POST(req: Request) {
       // 5. Nhật ký hoạt động
       case 'append_log':
         await appendLogToSheet(payload.log);
+        return NextResponse.json({ success: true }, { headers: corsAndNoCacheHeaders });
+
+      // 6. Quản lý Combo
+      case 'append_combo':
+        await appendComboToSheet(payload.combo);
+        return NextResponse.json({ success: true }, { headers: corsAndNoCacheHeaders });
+
+      case 'delete_combo':
+        await deleteComboFromSheet(payload.comboId);
+        return NextResponse.json({ success: true }, { headers: corsAndNoCacheHeaders });
+
+      case 'append_combo_transfer':
+        if (Array.isArray(payload.transfers)) {
+          for (const tr of payload.transfers) {
+            await appendTransferToSheet(tr);
+            await updateAssetInSheet(tr.asset_code, {
+              status: 'pending_transfer',
+              location: tr.location_after || undefined,
+            });
+          }
+        }
         return NextResponse.json({ success: true }, { headers: corsAndNoCacheHeaders });
 
       default:

@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useApp } from '@/context/AppContext';
 import { TransferModal } from '@/components/TransferModal';
 import { ConfirmTransferModal } from '@/components/ConfirmTransferModal';
-import { TransferRecord } from '@/types';
+import { TransferRecord, EquipmentCombo } from '@/types';
 import { 
   ArrowRightLeft, 
   Plus, 
@@ -25,13 +25,21 @@ import {
   X,
   Check,
   MapPin,
-  Lock
+  Lock,
+  Boxes,
+  Sparkles,
+  BookmarkPlus
 } from 'lucide-react';
 
 export default function TransfersPage() {
   const { 
     transfers, 
     currentUser, 
+    assets,
+    combos,
+    addCombo,
+    deleteCombo,
+    confirmComboTransfer,
     canManageEquipment, 
     canViewTransfers,
     canCreateTransfers,
@@ -50,9 +58,17 @@ export default function TransfersPage() {
 
   // Modals
   const [isTransferModalOpen, setIsTransferModalOpen] = useState(false);
+  const [selectedComboForTransfer, setSelectedComboForTransfer] = useState<EquipmentCombo | null>(null);
+  const [isComboManagerOpen, setIsComboManagerOpen] = useState(false);
   const [selectedTransferForConfirm, setSelectedTransferForConfirm] = useState<TransferRecord | null>(null);
   const [viewingTransfer, setViewingTransfer] = useState<TransferRecord | null>(null);
   const [editingTransfer, setEditingTransfer] = useState<TransferRecord | null>(null);
+
+  // New Combo creation in Combo Manager
+  const [newComboName, setNewComboName] = useState('');
+  const [newComboDesc, setNewComboDesc] = useState('');
+  const [newComboSelectedAssets, setNewComboSelectedAssets] = useState<string[]>([]);
+  const [isCreatingComboFormOpen, setIsCreatingComboFormOpen] = useState(false);
 
   // Edit Transfer form state
   const [editGiverNotes, setEditGiverNotes] = useState('');
@@ -131,6 +147,14 @@ export default function TransfersPage() {
     }
   };
 
+  const handleConfirmAllForMe = () => {
+    const myPending = scopedTransfers.filter(t => t.status === 'pending' && t.to_user_id === currentUser.id);
+    if (myPending.length === 0) return;
+    if (confirm(`Bạn có chắc muốn XÁC NHẬN NHẬN ĐỦ toàn bộ ${myPending.length} thiết bị/Combo đang bàn giao cho bạn (${currentUser.full_name})?`)) {
+      confirmComboTransfer(myPending.map(t => t.id), 'Đã nhận đủ thiết bị');
+    }
+  };
+
   if (!canViewTransfers) {
     return (
       <div className="py-20 text-center max-w-lg mx-auto bg-white border border-slate-200 rounded-3xl p-8 shadow-sm space-y-4">
@@ -161,19 +185,32 @@ export default function TransfersPage() {
             Quy Trình Mượn – Trả & Bàn Giao Thiết Bị
           </h1>
           <p className="text-xs sm:text-sm text-slate-500 mt-0.5">
-            Bàn giao trực tiếp, xem chi tiết biên bản, chỉnh sửa, xóa và phân quyền xác nhận đúng người nhận
+            Bàn giao lẻ hoặc theo Combo cả bộ, xem chi tiết biên bản, chỉnh sửa, xóa và xác nhận hai bên an toàn
           </p>
         </div>
 
-        {canCreateTransfers && (
+        <div className="flex items-center gap-2 sm:gap-2.5">
           <button
-            onClick={() => setIsTransferModalOpen(true)}
-            className="flex items-center gap-2 px-4 py-2.5 bg-orange-600 hover:bg-orange-500 text-white rounded-xl text-xs sm:text-sm font-bold shadow-md shadow-orange-600/25 transition active:scale-95"
+            onClick={() => setIsComboManagerOpen(true)}
+            className="flex items-center gap-2 px-3.5 py-2.5 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 rounded-xl text-xs sm:text-sm font-semibold transition shadow-sm active:scale-95"
           >
-            <Plus className="w-4 h-4" />
-            <span>Tạo Bàn Giao Mới</span>
+            <Boxes className="w-4 h-4 text-orange-600" />
+            <span>Bộ Combo ({combos.length})</span>
           </button>
-        )}
+
+          {canCreateTransfers && (
+            <button
+              onClick={() => {
+                setSelectedComboForTransfer(null);
+                setIsTransferModalOpen(true);
+              }}
+              className="flex items-center gap-2 px-4 py-2.5 bg-orange-600 hover:bg-orange-500 text-white rounded-xl text-xs sm:text-sm font-bold shadow-md shadow-orange-600/25 transition active:scale-95"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Tạo Bàn Giao Mới</span>
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Rules Banner (Simple & Clear) */}
@@ -188,7 +225,7 @@ export default function TransfersPage() {
               {isStaffOnly ? (
                 <span>
                   • <strong>Chế độ Nhân sự:</strong> Bạn chỉ nhìn thấy và xác nhận các giao dịch liên quan trực tiếp đến bạn ({currentUser.full_name}).<br />
-                  • Chỉ người nhận mới có quyền bấm xác nhận nhận máy.
+                  • Chỉ người nhận mới có quyền bấm xác nhận nhận máy hoặc nhận cả bộ Combo.
                 </span>
               ) : (
                 <span>
@@ -201,9 +238,18 @@ export default function TransfersPage() {
         </div>
 
         {forMeCount > 0 && (
-          <div className="bg-emerald-100 border border-emerald-300 text-emerald-800 px-4 py-2.5 rounded-xl flex items-center gap-2 font-bold shrink-0">
-            <Clock className="w-4 h-4 animate-spin text-emerald-700" />
-            <span>Có {forMeCount} thiết bị đang chờ bạn xác nhận!</span>
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 shrink-0">
+            <div className="bg-emerald-100 border border-emerald-300 text-emerald-800 px-3.5 py-2 rounded-xl flex items-center gap-2 font-bold shrink-0 text-xs">
+              <Clock className="w-4 h-4 animate-spin text-emerald-700" />
+              <span>{forMeCount} thiết bị chờ duyệt</span>
+            </div>
+            <button
+              onClick={handleConfirmAllForMe}
+              className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold shadow-md shadow-emerald-600/25 flex items-center justify-center gap-1.5 transition active:scale-95"
+            >
+              <CheckCircle2 className="w-4 h-4" />
+              <span>Xác nhận nhận cả bộ ({forMeCount})</span>
+            </button>
           </div>
         )}
       </div>
@@ -371,6 +417,12 @@ export default function TransfersPage() {
                       <span className="font-mono text-xs font-bold text-orange-700 bg-orange-50 border border-orange-200 px-2 py-0.5 rounded">
                         {tr.asset_code}
                       </span>
+                      {tr.combo_name && (
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-100 text-purple-800 border border-purple-200 flex items-center gap-1">
+                          <Boxes className="w-3 h-3 text-purple-600" />
+                          <span>Combo: {tr.combo_name}</span>
+                        </span>
+                      )}
                       <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
                         tr.status === 'completed'
                           ? 'bg-emerald-100 text-emerald-800'
@@ -704,10 +756,254 @@ export default function TransfersPage() {
         </div>
       )}
 
+      {/* MODAL QUẢN LÝ BỘ COMBO THIẾT BỊ */}
+      {isComboManagerOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-sm overflow-y-auto">
+          <div className="bg-white border border-slate-200 rounded-3xl w-full max-w-2xl overflow-hidden shadow-2xl flex flex-col my-auto max-h-[90vh]">
+            <div className="p-4 sm:p-5 border-b border-slate-100 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="p-2 bg-orange-100 text-orange-600 rounded-xl">
+                  <Boxes className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-slate-900 text-base sm:text-lg">
+                    Quản Lý Bộ Combo Thiết Bị Studio
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    Gom sẵn máy ảnh, lens, phụ kiện thành bộ để bàn giao nhanh 1 chạm
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  setIsComboManagerOpen(false);
+                  setIsCreatingComboFormOpen(false);
+                }}
+                className="p-1.5 text-slate-400 hover:text-slate-700 rounded-xl hover:bg-slate-100 transition"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-4 sm:p-6 space-y-4 overflow-y-auto">
+              {/* Header Action: Add Combo */}
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-slate-500 font-semibold">
+                  Hiện có: <strong className="text-orange-600 font-bold">{combos.length}</strong> Combo mẫu
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setIsCreatingComboFormOpen(!isCreatingComboFormOpen)}
+                  className="px-3 py-1.5 bg-orange-600 hover:bg-orange-500 text-white rounded-xl text-xs font-bold shadow-sm flex items-center gap-1.5 transition active:scale-95"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>{isCreatingComboFormOpen ? 'Đóng form tạo' : 'Tạo Combo Mới'}</span>
+                </button>
+              </div>
+
+              {/* Form Tạo Combo Mới */}
+              {isCreatingComboFormOpen && (
+                <div className="p-4 bg-orange-50/60 border border-orange-200 rounded-2xl space-y-3 text-xs">
+                  <div className="font-bold text-orange-950 flex items-center gap-1.5 text-sm">
+                    <Sparkles className="w-4 h-4 text-orange-600" />
+                    <span>Thiết lập Combo mới:</span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-[11px] font-bold text-slate-700 block mb-1">
+                        Tên Combo <span className="text-rose-500">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="VD: Combo Chụp Phóng Sự Sony A7IV"
+                        value={newComboName}
+                        onChange={e => setNewComboName(e.target.value)}
+                        className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-orange-500 font-semibold"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-[11px] font-bold text-slate-700 block mb-1">
+                        Mô tả / Phụ kiện đi kèm
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="VD: Gồm máy + 2 lens + 2 pin + 1 sạc đôi"
+                        value={newComboDesc}
+                        onChange={e => setNewComboDesc(e.target.value)}
+                        className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-orange-500"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Pick Assets in Studio */}
+                  <div>
+                    <label className="text-[11px] font-bold text-slate-700 block mb-1">
+                      Chọn các thiết bị thuộc Combo này ({newComboSelectedAssets.length} đã chọn):
+                    </label>
+                    <div className="max-h-40 overflow-y-auto bg-white border border-slate-200 rounded-xl p-2 space-y-1 divide-y divide-slate-100">
+                      {assets.map(a => {
+                        const isChecked = newComboSelectedAssets.includes(a.code);
+                        return (
+                          <label
+                            key={a.id}
+                            className={`flex items-center justify-between p-1.5 rounded-lg cursor-pointer transition ${
+                              isChecked ? 'bg-orange-50 font-bold' : 'hover:bg-slate-50'
+                            }`}
+                          >
+                            <div className="flex items-center gap-2">
+                              <input
+                                type="checkbox"
+                                checked={isChecked}
+                                onChange={() => {
+                                  setNewComboSelectedAssets(prev =>
+                                    prev.includes(a.code) ? prev.filter(c => c !== a.code) : [...prev, a.code]
+                                  );
+                                }}
+                                className="rounded border-slate-300 text-orange-600 focus:ring-orange-500"
+                              />
+                              <span className="font-mono text-orange-700 bg-orange-50 px-1.5 py-0.2 rounded text-[11px]">
+                                {a.code}
+                              </span>
+                              <span className="text-slate-800">{a.name}</span>
+                            </div>
+                            <span className="text-[10px] text-slate-400">{a.location}</span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-end gap-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => setIsCreatingComboFormOpen(false)}
+                      className="px-3 py-1.5 text-slate-500 hover:text-slate-800"
+                    >
+                      Hủy
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!newComboName.trim()) {
+                          alert('Vui lòng nhập tên Combo!');
+                          return;
+                        }
+                        if (newComboSelectedAssets.length === 0) {
+                          alert('Vui lòng chọn ít nhất 1 thiết bị cho Combo!');
+                          return;
+                        }
+                        addCombo({
+                          name: newComboName.trim(),
+                          description: newComboDesc.trim(),
+                          asset_codes: newComboSelectedAssets,
+                        });
+                        setNewComboName('');
+                        setNewComboDesc('');
+                        setNewComboSelectedAssets([]);
+                        setIsCreatingComboFormOpen(false);
+                      }}
+                      className="px-4 py-1.5 bg-orange-600 hover:bg-orange-500 text-white rounded-xl font-bold shadow-sm active:scale-95 transition"
+                    >
+                      Lưu Combo vào Google Sheets
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Combo List */}
+              {combos.length === 0 ? (
+                <div className="text-center py-12 bg-slate-50 border border-dashed border-slate-200 rounded-2xl space-y-3">
+                  <Boxes className="w-10 h-10 text-slate-300 mx-auto" />
+                  <p className="text-xs text-slate-500">
+                    Chưa có Combo nào được tạo. Bạn có thể tạo ngay Combo để bàn giao cả bộ máy ảnh + lens + phụ kiện!
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {combos.map(combo => (
+                    <div
+                      key={combo.id}
+                      className="bg-white border border-slate-200 hover:border-orange-300 rounded-2xl p-4 transition shadow-sm space-y-3 group"
+                    >
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-slate-100">
+                        <div>
+                          <h4 className="font-bold text-slate-900 text-sm sm:text-base flex items-center gap-2">
+                            <Boxes className="w-4 h-4 text-orange-600" />
+                            <span>{combo.name}</span>
+                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-orange-100 text-orange-800 font-bold">
+                              {combo.asset_codes.length} thiết bị
+                            </span>
+                          </h4>
+                          {combo.description && (
+                            <p className="text-xs text-slate-500 mt-0.5 italic">
+                              &quot;{combo.description}&quot;
+                            </p>
+                          )}
+                        </div>
+
+                        <div className="flex items-center gap-2 self-end sm:self-auto">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedComboForTransfer(combo);
+                              setIsComboManagerOpen(false);
+                              setIsTransferModalOpen(true);
+                            }}
+                            className="px-3 py-1.5 bg-orange-600 hover:bg-orange-500 text-white rounded-xl text-xs font-bold shadow-sm flex items-center gap-1.5 transition active:scale-95"
+                          >
+                            <ArrowRightLeft className="w-3.5 h-3.5" />
+                            <span>Bàn giao Combo này ngay</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (confirm(`Bạn có chắc muốn XÓA Combo "${combo.name}" khỏi hệ thống và Google Sheets?`)) {
+                                deleteCombo(combo.id);
+                              }
+                            }}
+                            className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition"
+                            title="Xóa Combo này"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Equipment Tags */}
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        {combo.asset_codes.map(code => {
+                          const asset = assets.find(a => a.code.toUpperCase() === code.toUpperCase());
+                          return (
+                            <span
+                              key={code}
+                              className="inline-flex items-center gap-1 px-2.5 py-1 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium text-slate-700"
+                            >
+                              <strong className="font-mono text-orange-700">{code}</strong>
+                              <span>{asset ? asset.name : ''}</span>
+                            </span>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* MODALS */}
       <TransferModal
         isOpen={isTransferModalOpen}
-        onClose={() => setIsTransferModalOpen(false)}
+        onClose={() => {
+          setIsTransferModalOpen(false);
+          setSelectedComboForTransfer(null);
+        }}
+        initialCombo={selectedComboForTransfer}
       />
 
       <ConfirmTransferModal

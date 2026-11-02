@@ -116,6 +116,8 @@ export interface TransferRecord {
   status: TransferStatus;
   due_date: string | null;
   location_after: string; // Vị trí sau khi bàn giao
+  combo_id?: string | null;
+  combo_name?: string | null;
   
   // Tình trạng khi giao
   giver_notes: string;
@@ -128,6 +130,16 @@ export interface TransferRecord {
   created_at: string;
   confirmed_at?: string | null;
   rejection_reason?: string | null;
+}
+
+export interface EquipmentCombo {
+  id: string;
+  name: string;
+  description?: string;
+  asset_ids: string[];
+  asset_codes: string[];
+  created_by_name?: string;
+  created_at: string;
 }
 
 export interface AuditSession {
@@ -196,9 +208,12 @@ export type LogAction =
   | 'login' 
   | 'logout'
   | 'password_change'
-  | 'permissions_update';
+  | 'permissions_update'
+  | 'combo_create'
+  | 'combo_delete'
+  | 'combo_transfer';
 
-export type LogModule = 'Thiết bị' | 'Mượn – Trả' | 'Nhân sự' | 'Kiểm kê' | 'Hệ thống' | 'Phân quyền';
+export type LogModule = 'Thiết bị' | 'Mượn – Trả' | 'Nhân sự' | 'Kiểm kê' | 'Hệ thống' | 'Phân quyền' | 'Combo';
 
 export interface ActivityLog {
   id: string;

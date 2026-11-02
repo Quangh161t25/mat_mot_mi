@@ -16,7 +16,8 @@ import {
   LogModule,
   UserPermissions,
   getUserPermissions,
-  DEFAULT_PERMISSIONS_BY_ROLE
+  DEFAULT_PERMISSIONS_BY_ROLE,
+  EquipmentCombo
 } from '@/types';
 import { 
   INITIAL_PROFILES, 
@@ -111,6 +112,26 @@ interface AppContextType {
     giverPhotos: string[];
   }) => { success: boolean; error?: string };
   
+  // Combo Management & Batch Transfer
+  combos: EquipmentCombo[];
+  addCombo: (combo: { name: string; description?: string; asset_codes: string[] }) => EquipmentCombo;
+  deleteCombo: (id: string) => void;
+  initiateComboTransfer: (data: {
+    assetIds: string[];
+    comboName?: string;
+    toUserId: string;
+    transferType: TransferType;
+    dueDate: string | null;
+    locationAfter: string;
+    giverNotes: string;
+    giverPhotos: string[];
+  }) => { success: boolean; error?: string; count?: number };
+  confirmComboTransfer: (
+    transferIds: string[], 
+    receiverNotes?: string, 
+    receiverPhotos?: string[]
+  ) => { success: boolean; error?: string; count?: number };
+  
   updateTransfer: (id: string, updates: Partial<TransferRecord>) => void;
   deleteTransfer: (id: string) => void;
   batchDeleteTransfers: (ids: string[]) => void;
@@ -166,6 +187,7 @@ const STORAGE_KEYS = {
   AUDIT_ITEMS: 'mmm_audit_items',
   NOTIFICATIONS: 'mmm_notifications',
   LOGS: 'mmm_activity_logs',
+  COMBOS: 'mmm_combos',
 };
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -178,6 +200,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [auditItems, setAuditItems] = useState<AuditItem[]>(INITIAL_AUDIT_ITEMS);
   const [notifications, setNotifications] = useState<AppNotification[]>(INITIAL_NOTIFICATIONS);
   const [logs, setLogs] = useState<ActivityLog[]>(INITIAL_LOGS);
+  const [combos, setCombos] = useState<EquipmentCombo[]>([]);
   
   const [googleSheetsStatus, setGoogleSheetsStatus] = useState<'loading' | 'connected' | 'error'>('loading');
   const [googleSheetsError, setGoogleSheetsError] = useState<string | null>(null);
@@ -335,6 +358,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               localStorage.setItem(STORAGE_KEYS.LOGS, JSON.stringify(json.data.logs));
             } catch (e) {}
           }
+          // 6. Đồng bộ Combo
+          if (Array.isArray(json.data.combos)) {
+            setCombos(json.data.combos);
+            try {
+              localStorage.setItem(STORAGE_KEYS.COMBOS, JSON.stringify(json.data.combos));
+            } catch (e) {}
+          }
         }
         syncFailuresRef.current = 0;
         lastSyncTimeRef.current = Date.now();
@@ -397,6 +427,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const storedNotifications = localStorage.getItem(STORAGE_KEYS.NOTIFICATIONS);
       const storedUser = localStorage.getItem(STORAGE_KEYS.CURRENT_USER);
       const storedLogs = localStorage.getItem(STORAGE_KEYS.LOGS);
+      const storedCombos = localStorage.getItem(STORAGE_KEYS.COMBOS);
       const storedAuthUserId = localStorage.getItem(STORAGE_KEYS.AUTH_USER_ID);
 
       if (storedProfiles) setProfiles(JSON.parse(storedProfiles));
@@ -406,6 +437,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (storedItems) setAuditItems(JSON.parse(storedItems));
       if (storedNotifications) setNotifications(JSON.parse(storedNotifications));
       if (storedLogs) setLogs(JSON.parse(storedLogs));
+      if (storedCombos) setCombos(JSON.parse(storedCombos));
       
       if (storedUser) {
         const parsed = JSON.parse(storedUser);
@@ -880,6 +912,228 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return { success: true };
   };
 
+  // 4b. Quản lý Combo & Bàn giao Combo
+  const addCombo = useCallback((comboData: { name: string; description?: string; asset_codes: string[] }) => {
+    const newCombo: EquipmentCombo = {
+      id: `combo-${Date.now()}`,
+      name: comboData.name.trim(),
+      description: (comboData.description || '').trim(),
+      asset_codes: comboData.asset_codes,
+      asset_ids: comboData.asset_codes.map(code => {
+        const match = assets.find(a => a.code.toUpperCase() === code.toUpperCase());
+        return match ? match.id : code;
+      }),
+      created_by_name: currentUser.full_name,
+      created_at: new Date().toISOString(),
+    };
+
+    setCombos(prev => {
+      const next = [newCombo, ...prev];
+      try {
+        localStorage.setItem(STORAGE_KEYS.COMBOS, JSON.stringify(next));
+      } catch (e) {}
+      return next;
+    });
+
+    dispatchToSheets('append_combo', { combo: newCombo });
+    addLog('combo_create', 'Combo', `Tạo Combo thiết bị: "${newCombo.name}" gồm ${newCombo.asset_codes.length} thiết bị`, newCombo.asset_codes.join(', '));
+    return newCombo;
+  }, [assets, currentUser.full_name, dispatchToSheets, addLog]);
+
+  const deleteCombo = useCallback((id: string) => {
+    const target = combos.find(c => c.id === id);
+    setCombos(prev => {
+      const next = prev.filter(c => c.id !== id);
+      try {
+        localStorage.setItem(STORAGE_KEYS.COMBOS, JSON.stringify(next));
+      } catch (e) {}
+      return next;
+    });
+
+    dispatchToSheets('delete_combo', { comboId: id });
+    addLog('combo_delete', 'Combo', `Xóa Combo thiết bị: "${target?.name || id}"`);
+  }, [combos, dispatchToSheets, addLog]);
+
+  const initiateComboTransfer = useCallback((data: {
+    assetIds: string[];
+    comboName?: string;
+    toUserId: string;
+    transferType: TransferType;
+    dueDate: string | null;
+    locationAfter: string;
+    giverNotes: string;
+    giverPhotos: string[];
+  }): { success: boolean; error?: string; count?: number } => {
+    if (!data.assetIds || data.assetIds.length === 0) {
+      return { success: false, error: 'Chưa chọn thiết bị nào trong combo để bàn giao!' };
+    }
+
+    const toUser = profiles.find(p => p.id === data.toUserId);
+    if (!toUser) return { success: false, error: 'Người nhận không tồn tại!' };
+    if (toUser.status === 'locked') return { success: false, error: 'Tài khoản người nhận đã bị khóa!' };
+
+    const validAssets = assets.filter(a => data.assetIds.includes(a.id));
+    if (validAssets.length === 0) {
+      return { success: false, error: 'Không tìm thấy thiết bị hợp lệ nào được chọn!' };
+    }
+
+    const busyAssets = validAssets.filter(a => a.status === 'pending_transfer');
+    if (busyAssets.length > 0) {
+      return { 
+        success: false, 
+        error: `Thiết bị sau đang trong giao dịch chờ khác: ${busyAssets.map(a => a.code).join(', ')}` 
+      };
+    }
+
+    const comboBatchId = `batch-${Date.now()}`;
+    const now = new Date().toISOString();
+    const createdTransfers: TransferRecord[] = [];
+
+    for (let i = 0; i < validAssets.length; i++) {
+      const asset = validAssets[i];
+      const newTransfer: TransferRecord = {
+        id: `tr-${Date.now()}-${i}`,
+        asset_id: asset.id,
+        asset_code: asset.code,
+        asset_name: asset.name,
+        asset_image: asset.image_url,
+        from_user_id: currentUser.id,
+        from_user_name: currentUser.full_name,
+        to_user_id: toUser.id,
+        to_user_name: toUser.full_name,
+        transfer_type: data.transferType,
+        status: 'pending',
+        due_date: data.dueDate,
+        location_after: data.locationAfter || 'Kho Studio',
+        giver_notes: data.comboName 
+          ? `[Combo: ${data.comboName}] ${data.giverNotes}`.trim() 
+          : data.giverNotes,
+        giver_photos: data.giverPhotos,
+        created_at: now,
+        combo_id: comboBatchId,
+        combo_name: data.comboName || 'Bộ Combo Bàn Giao',
+      };
+      createdTransfers.push(newTransfer);
+
+      // Cập nhật trạng thái từng máy sang pending_transfer
+      updateAsset(asset.id, {
+        status: 'pending_transfer',
+        location: data.locationAfter || asset.location,
+      });
+    }
+
+    setTransfers(prev => [...createdTransfers, ...prev]);
+
+    // Bắn thông báo tới người nhận
+    const notifTitle = `🔔 Yêu cầu nhận Combo (${validAssets.length} thiết bị)`;
+    const notifBody = `${currentUser.full_name} đã bàn giao Combo "${data.comboName || 'Bộ thiết bị'}" gồm ${validAssets.length} món (${validAssets.map(a => a.code).join(', ')}) cho bạn. Bấm để xác nhận!`;
+
+    const newNotif: AppNotification = {
+      id: `notif-${Date.now()}`,
+      title: notifTitle,
+      message: notifBody,
+      type: 'transfer_request',
+      target_user_id: toUser.id,
+      actor_name: currentUser.full_name,
+      asset_name: data.comboName || 'Combo thiết bị',
+      link: '/transfers',
+      is_read: false,
+      created_at: now,
+    };
+
+    setNotifications(prev => [newNotif, ...prev]);
+    triggerDeviceNotification({
+      title: notifTitle,
+      body: notifBody,
+      url: '/transfers',
+    });
+
+    // Đồng bộ lên Google Sheets
+    const sanitizedTransfers = createdTransfers.map(tr => ({
+      ...tr,
+      giver_photos: (tr.giver_photos || []).map((p, idx) => 
+        (p && (p.startsWith('http://') || p.startsWith('https://'))) ? p : `[Ảnh bàn giao #${idx + 1}]`
+      ),
+    }));
+    dispatchToSheets('append_combo_transfer', { transfers: sanitizedTransfers });
+    addLog(
+      'combo_transfer', 
+      'Mượn – Trả', 
+      `Bàn giao Combo "${data.comboName || 'Bộ thiết bị'}" (${validAssets.length} thiết bị) cho ${toUser.full_name}`,
+      validAssets.map(a => `${a.code} - ${a.name}`).join('; ')
+    );
+
+    return { success: true, count: validAssets.length };
+  }, [assets, profiles, currentUser, updateAsset, dispatchToSheets, addLog]);
+
+  const confirmComboTransfer = useCallback((
+    transferIds: string[], 
+    receiverNotes?: string, 
+    receiverPhotos?: string[]
+  ): { success: boolean; error?: string; count?: number } => {
+    if (!transferIds || transferIds.length === 0) {
+      return { success: false, error: 'Không có giao dịch nào được chọn để xác nhận' };
+    }
+
+    const now = new Date().toISOString();
+    let confirmedCount = 0;
+
+    for (const trId of transferIds) {
+      const tr = transfers.find(t => t.id === trId);
+      if (!tr || tr.status !== 'pending') continue;
+
+      const isRecipient = currentUser.id === tr.to_user_id;
+      if (!isRecipient && !canManageEquipment) continue;
+
+      confirmedCount++;
+
+      setTransfers(prev => prev.map(t => {
+        if (t.id === trId) {
+          return {
+            ...t,
+            status: 'completed',
+            confirmed_at: now,
+            receiver_notes: receiverNotes || '',
+            receiver_photos: receiverPhotos || [],
+          };
+        }
+        return t;
+      }));
+
+      const isReturned = tr.transfer_type === 'return';
+      updateAsset(tr.asset_id, {
+        status: isReturned ? 'available' : 'in_use',
+        alert_reason: null,
+        current_holder_id: isReturned ? null : tr.to_user_id,
+        current_holder_name: isReturned ? null : tr.to_user_name,
+        location: tr.location_after || 'Kho Studio',
+        due_date: isReturned ? null : tr.due_date,
+      });
+
+      dispatchToSheets('update_transfer', {
+        transferId: trId,
+        updates: {
+          status: 'completed',
+          confirmed_at: now,
+          receiver_notes: receiverNotes || '',
+          receiver_photos: receiverPhotos || [],
+        }
+      });
+
+      dispatchToSheets('update_asset_status', {
+        assetCode: tr.asset_code,
+        status: isReturned ? 'available' : 'in_use',
+        holderName: isReturned ? null : tr.to_user_name,
+        location: tr.location_after || 'Kho Studio',
+        dueDate: isReturned ? null : tr.due_date,
+        alertReason: null,
+      });
+    }
+
+    addLog('transfer_confirm', 'Mượn – Trả', `Xác nhận nhận Combo hàng loạt (${confirmedCount} thiết bị)`);
+    return { success: true, count: confirmedCount };
+  }, [transfers, currentUser, canManageEquipment, updateAsset, dispatchToSheets, addLog]);
+
   const updateTransfer = (id: string, updates: Partial<TransferRecord>) => {
     const target = transfers.find(t => t.id === id);
     setTransfers(prev => prev.map(t => t.id === id ? { ...t, ...updates } : t));
@@ -1312,6 +1566,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         resolveAssetIssue,
         
         initiateTransfer,
+        combos,
+        addCombo,
+        deleteCombo,
+        initiateComboTransfer,
+        confirmComboTransfer,
         updateTransfer,
         deleteTransfer,
         batchDeleteTransfers,

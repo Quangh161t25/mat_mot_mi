@@ -1,7 +1,7 @@
 import { google } from 'googleapis';
 import path from 'path';
 import fs from 'fs';
-import { Asset, UserProfile, TransferRecord, AuditItem, AuditSession, ActivityLog, UserPermissions } from '@/types';
+import { Asset, UserProfile, TransferRecord, AuditItem, AuditSession, ActivityLog, UserPermissions, EquipmentCombo } from '@/types';
 import { INITIAL_PROFILES } from '@/lib/mock-data';
 
 export const SPREADSHEET_ID = 
@@ -198,15 +198,16 @@ export async function fetchAllFromSheets(forceRefresh = false) {
       ranges: [
         'THIET_BI!A2:N1000',
         'NHAN_SU!A2:J1000',
-        'MUON_TRA!A2:P1000',
+        'MUON_TRA!A2:Q1000',
         'KIEM_KE!A2:M1000',
         'NHAT_KY!A2:I1000',
+        'COMBO!A2:H500',
       ],
     });
 
     const batchRes: any = await Promise.race([batchPromise, timeoutPromise]);
 
-    const [assetsRange, staffRange, transfersRange, auditRange, logsRange] = batchRes.data.valueRanges || [];
+    const [assetsRange, staffRange, transfersRange, auditRange, logsRange, combosRange] = batchRes.data.valueRanges || [];
 
     // Parse THIET_BI
     const assets: Asset[] = (assetsRange?.values || [])
@@ -285,6 +286,7 @@ export async function fetchAllFromSheets(forceRefresh = false) {
           created_at: row[13] || new Date().toISOString(),
           confirmed_at: row[14] || null,
           rejection_reason: row[15] || null,
+          combo_name: row[16] || null,
         };
       });
 
@@ -348,7 +350,29 @@ export async function fetchAllFromSheets(forceRefresh = false) {
       }))
       .reverse();
 
-    const result = { assets, profiles, transfers, auditItems, auditSessions, logs };
+    // Parse COMBO
+    const combos: EquipmentCombo[] = (combosRange?.values || [])
+      .filter((row: any) => row[0] && row[0].toString().trim() !== '')
+      .map((row: any, idx: number) => {
+        const rawCodes = (row[3] || '').toString();
+        const codeList = rawCodes.split(',').map((c: string) => c.trim()).filter(Boolean);
+        const assetIds = codeList.map((code: string) => {
+          const match = assets.find(a => a.code.toUpperCase() === code.toUpperCase());
+          return match ? match.id : code;
+        });
+
+        return {
+          id: row[0] || `combo-${idx + 1}`,
+          name: row[1] || 'Combo thiết bị',
+          description: row[2] || '',
+          asset_codes: codeList,
+          asset_ids: assetIds,
+          created_by_name: row[6] || 'Admin',
+          created_at: row[7] || new Date().toISOString(),
+        };
+      });
+
+    const result = { assets, profiles, transfers, auditItems, auditSessions, logs, combos };
     cachedData = result;
     lastFetchTimestamp = Date.now();
     writeDiskCache(result);
@@ -372,6 +396,7 @@ export async function fetchAllFromSheets(forceRefresh = false) {
       auditItems: [],
       auditSessions: [],
       logs: [],
+      combos: [],
     };
   }
 }
@@ -660,6 +685,7 @@ export async function appendTransferToSheet(transfer: TransferRecord) {
     transfer.created_at,
     transfer.confirmed_at || '',
     transfer.rejection_reason || '',
+    transfer.combo_name || '',
   ];
 
   await sheets.spreadsheets.values.append({
@@ -897,4 +923,53 @@ export async function appendLogToSheet(log: ActivityLog) {
   } catch (err: any) {
     console.warn('Lỗi ghi log sang Google Sheets:', err.message);
   }
+}
+
+// ==========================================
+// 7. CÁC HÀM QUẢN LÝ COMBO (COMBO)
+// ==========================================
+
+export async function appendComboToSheet(combo: EquipmentCombo) {
+  invalidateSheetsCache();
+  const sheets = getSheetsClient();
+  if (!sheets) throw new Error('Google Sheets chưa sẵn sàng');
+
+  const row = [
+    combo.id,
+    combo.name,
+    combo.description || '',
+    (combo.asset_codes || []).join(', '),
+    combo.asset_codes ? `${combo.asset_codes.length} thiết bị` : '',
+    combo.asset_codes ? combo.asset_codes.length : 0,
+    combo.created_by_name || 'Admin',
+    combo.created_at || new Date().toISOString(),
+  ];
+
+  await sheets.spreadsheets.values.append({
+    spreadsheetId: SPREADSHEET_ID,
+    range: 'COMBO!A2',
+    valueInputOption: 'USER_ENTERED',
+    requestBody: { values: [row] },
+  });
+}
+
+export async function deleteComboFromSheet(comboId: string) {
+  invalidateSheetsCache();
+  const sheets = getSheetsClient();
+  if (!sheets) throw new Error('Google Sheets chưa sẵn sàng');
+
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId: SPREADSHEET_ID,
+    range: 'COMBO!A2:H500',
+  });
+
+  const rows = res.data.values || [];
+  const rowIndex = rows.findIndex(r => r[0] && r[0].toString().trim() === comboId.trim());
+  if (rowIndex === -1) return;
+
+  const actualRow = rowIndex + 2;
+  await sheets.spreadsheets.values.clear({
+    spreadsheetId: SPREADSHEET_ID,
+    range: `COMBO!A${actualRow}:H${actualRow}`,
+  });
 }
