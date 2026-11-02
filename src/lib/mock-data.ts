@@ -1,4 +1,4 @@
-import { UserProfile, Asset, TransferRecord, AuditSession, AuditItem, AppNotification } from '@/types';
+import { UserProfile, Asset, TransferRecord, AuditSession, AuditItem, AppNotification, ActivityLog } from '@/types';
 
 export const INITIAL_PROFILES: UserProfile[] = [
   {
@@ -8,6 +8,7 @@ export const INITIAL_PROFILES: UserProfile[] = [
     phone: '0901 234 567',
     role: 'admin',
     status: 'active',
+    password: 'admin',
     avatar_url: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
     created_at: '2025-01-01T08:00:00Z',
   },
@@ -22,3 +23,5 @@ export const INITIAL_AUDIT_SESSIONS: AuditSession[] = [];
 export const INITIAL_AUDIT_ITEMS: AuditItem[] = [];
 
 export const INITIAL_NOTIFICATIONS: AppNotification[] = [];
+
+export const INITIAL_LOGS: ActivityLog[] = [];

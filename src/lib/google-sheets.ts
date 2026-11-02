@@ -1,7 +1,8 @@
 import { google } from 'googleapis';
 import path from 'path';
 import fs from 'fs';
-import { Asset, UserProfile, TransferRecord, AuditItem, AuditSession } from '@/types';
+import { Asset, UserProfile, TransferRecord, AuditItem, AuditSession, ActivityLog } from '@/types';
+import { INITIAL_PROFILES } from '@/lib/mock-data';
 
 export const SPREADSHEET_ID = 
   process.env.GOOGLE_SHEET_ID || 
@@ -149,6 +150,7 @@ let cachedData: {
   transfers: TransferRecord[];
   auditItems: AuditItem[];
   auditSessions: AuditSession[];
+  logs: ActivityLog[];
 } | null = null;
 let lastFetchTimestamp = 0;
 const CACHE_TTL_MS = 5000; // 5 giây cache máy chủ (chống nghẽn khi nhiều máy gọi cùng giây, nhưng đồng bộ tức thì)
@@ -190,20 +192,21 @@ export async function fetchAllFromSheets(forceRefresh = false) {
       setTimeout(() => reject(new Error('Google Sheets API timeout sau 9s')), 9000)
     );
 
-    // Sử dụng batchGet gộp 4 Sheet thành 1 request duy nhất để không bao giờ vượt Quota của Google
+    // Sử dụng batchGet gộp các Sheet thành 1 request duy nhất để không bao giờ vượt Quota của Google
     const batchPromise = sheets.spreadsheets.values.batchGet({
       spreadsheetId: SPREADSHEET_ID,
       ranges: [
         'THIET_BI!A2:N1000',
-        'NHAN_SU!A2:H1000',
+        'NHAN_SU!A2:I1000',
         'MUON_TRA!A2:P1000',
         'KIEM_KE!A2:M1000',
+        'NHAT_KY!A2:I1000',
       ],
     });
 
     const batchRes: any = await Promise.race([batchPromise, timeoutPromise]);
 
-    const [assetsRange, staffRange, transfersRange, auditRange] = batchRes.data.valueRanges || [];
+    const [assetsRange, staffRange, transfersRange, auditRange, logsRange] = batchRes.data.valueRanges || [];
 
     // Parse THIET_BI
     const assets: Asset[] = (assetsRange?.values || [])
@@ -241,6 +244,7 @@ export async function fetchAllFromSheets(forceRefresh = false) {
         status: (row[5] || 'active') as any,
         avatar_url: row[6] || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150',
         created_at: row[7] || new Date().toISOString(),
+        password: row[8] || (row[4] === 'admin' ? 'admin' : '123456'),
       }));
 
     // Parse MUON_TRA
@@ -319,7 +323,23 @@ export async function fetchAllFromSheets(forceRefresh = false) {
 
     const auditSessions = Array.from(sessionMap.values());
 
-    const result = { assets, profiles, transfers, auditItems, auditSessions };
+    // Parse NHAT_KY
+    const logs: ActivityLog[] = (logsRange?.values || [])
+      .filter((row: any) => row[0] && row[0].toString().trim() !== '')
+      .map((row: any, idx: number) => ({
+        id: row[0] || `log-${idx + 1}`,
+        timestamp: row[1] || new Date().toISOString(),
+        user_id: row[2] || '',
+        user_name: row[3] || 'Hệ thống',
+        user_role: (row[4] || 'staff') as any,
+        action: (row[5] || 'update') as any,
+        module: (row[6] || 'Hệ thống') as any,
+        summary: row[7] || '',
+        details: row[8] || '',
+      }))
+      .reverse();
+
+    const result = { assets, profiles, transfers, auditItems, auditSessions, logs };
     cachedData = result;
     lastFetchTimestamp = Date.now();
     writeDiskCache(result);
@@ -342,6 +362,7 @@ export async function fetchAllFromSheets(forceRefresh = false) {
       transfers: [],
       auditItems: [],
       auditSessions: [],
+      logs: [],
     };
   }
 }
@@ -469,6 +490,7 @@ export async function appendStaffToSheet(profile: UserProfile) {
     profile.status,
     profile.avatar_url || '',
     profile.created_at || new Date().toISOString(),
+    profile.password || '123456',
   ];
 
   await sheets.spreadsheets.values.append({
@@ -486,7 +508,7 @@ export async function updateStaffInSheet(id: string, updates: Partial<UserProfil
 
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId: SPREADSHEET_ID,
-    range: 'NHAN_SU!A2:H1000',
+    range: 'NHAN_SU!A2:I1000',
   });
 
   const rows = res.data.values || [];
@@ -505,11 +527,12 @@ export async function updateStaffInSheet(id: string, updates: Partial<UserProfil
     updates.status !== undefined ? updates.status : existingRow[5],
     updates.avatar_url !== undefined ? updates.avatar_url : existingRow[6],
     existingRow[7] || new Date().toISOString(),
+    updates.password !== undefined ? updates.password : (existingRow[8] || '123456'),
   ];
 
   await sheets.spreadsheets.values.update({
     spreadsheetId: SPREADSHEET_ID,
-    range: `NHAN_SU!A${actualRow}:H${actualRow}`,
+    range: `NHAN_SU!A${actualRow}:I${actualRow}`,
     valueInputOption: 'USER_ENTERED',
     requestBody: { values: [newRow] },
   });
@@ -639,4 +662,152 @@ export async function appendAuditToSheet(item: AuditItem, sessionTitle: string) 
     valueInputOption: 'USER_ENTERED',
     requestBody: { values: [row] },
   });
+}
+
+// Xóa nhân sự
+export async function deleteStaffInSheet(id: string) {
+  invalidateSheetsCache();
+  const sheets = getSheetsClient();
+  if (!sheets) throw new Error('Google Sheets chưa sẵn sàng');
+
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId: SPREADSHEET_ID,
+    range: 'NHAN_SU!A2:A1000',
+  });
+
+  const rows = res.data.values || [];
+  const rowIndex = rows.findIndex(r => r[0] && r[0].toString().trim() === id.trim());
+  if (rowIndex === -1) return;
+  const actualRow = rowIndex + 2;
+
+  await sheets.spreadsheets.values.clear({
+    spreadsheetId: SPREADSHEET_ID,
+    range: `NHAN_SU!A${actualRow}:I${actualRow}`,
+  });
+}
+
+export async function batchDeleteStaffInSheet(ids: string[]) {
+  for (const id of ids) {
+    await deleteStaffInSheet(id);
+  }
+}
+
+// Xóa hàng loạt thiết bị
+export async function batchDeleteAssetsInSheet(codes: string[]) {
+  for (const code of codes) {
+    await deleteAssetInSheet(code);
+  }
+}
+
+// Xóa giao dịch mượn trả
+export async function deleteTransferInSheet(id: string) {
+  invalidateSheetsCache();
+  const sheets = getSheetsClient();
+  if (!sheets) throw new Error('Google Sheets chưa sẵn sàng');
+
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId: SPREADSHEET_ID,
+    range: 'MUON_TRA!A2:A1000',
+  });
+
+  const rows = res.data.values || [];
+  const rowIndex = rows.findIndex(r => r[0] && r[0].toString().trim() === id.trim());
+  if (rowIndex === -1) return;
+  const actualRow = rowIndex + 2;
+
+  await sheets.spreadsheets.values.clear({
+    spreadsheetId: SPREADSHEET_ID,
+    range: `MUON_TRA!A${actualRow}:P${actualRow}`,
+  });
+}
+
+export async function batchDeleteTransfersInSheet(ids: string[]) {
+  for (const id of ids) {
+    await deleteTransferInSheet(id);
+  }
+}
+
+// Xóa lượt kiểm kê
+export async function deleteAuditItemInSheet(assetCode: string, sessionId?: string) {
+  invalidateSheetsCache();
+  const sheets = getSheetsClient();
+  if (!sheets) throw new Error('Google Sheets chưa sẵn sàng');
+
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId: SPREADSHEET_ID,
+    range: 'KIEM_KE!A2:C1000',
+  });
+
+  const rows = res.data.values || [];
+  const rowIndex = rows.findIndex(r => {
+    const codeMatch = r[2] && r[2].toString().trim().toUpperCase() === assetCode.trim().toUpperCase();
+    if (sessionId) {
+      return codeMatch && r[0] === sessionId;
+    }
+    return codeMatch;
+  });
+
+  if (rowIndex === -1) return;
+  const actualRow = rowIndex + 2;
+
+  await sheets.spreadsheets.values.clear({
+    spreadsheetId: SPREADSHEET_ID,
+    range: `KIEM_KE!A${actualRow}:M${actualRow}`,
+  });
+}
+
+// Xóa cả đợt kiểm kê
+export async function deleteAuditSessionInSheet(sessionId: string) {
+  invalidateSheetsCache();
+  const sheets = getSheetsClient();
+  if (!sheets) throw new Error('Google Sheets chưa sẵn sàng');
+
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId: SPREADSHEET_ID,
+    range: 'KIEM_KE!A2:A1000',
+  });
+
+  const rows = res.data.values || [];
+  for (let idx = 0; idx < rows.length; idx++) {
+    if (rows[idx][0] && rows[idx][0].toString().trim() === sessionId.trim()) {
+      const actualRow = idx + 2;
+      await sheets.spreadsheets.values.clear({
+        spreadsheetId: SPREADSHEET_ID,
+        range: `KIEM_KE!A${actualRow}:M${actualRow}`,
+      });
+    }
+  }
+}
+
+// ==========================================
+// 6. CÁC HÀM NHẬT KÝ HOẠT ĐỘNG (NHAT_KY)
+// ==========================================
+
+export async function appendLogToSheet(log: ActivityLog) {
+  invalidateSheetsCache();
+  const sheets = getSheetsClient();
+  if (!sheets) return;
+
+  const row = [
+    log.id,
+    log.timestamp,
+    log.user_id,
+    log.user_name,
+    log.user_role,
+    log.action,
+    log.module,
+    log.summary,
+    log.details || '',
+  ];
+
+  try {
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: SPREADSHEET_ID,
+      range: 'NHAT_KY!A2',
+      valueInputOption: 'USER_ENTERED',
+      requestBody: { values: [row] },
+    });
+  } catch (err: any) {
+    console.warn('Lỗi ghi log sang Google Sheets:', err.message);
+  }
 }

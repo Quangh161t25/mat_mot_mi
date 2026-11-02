@@ -10,7 +10,10 @@ import {
   AssetStatus, 
   AlertReason,
   TransferType,
-  AppNotification
+  AppNotification,
+  ActivityLog,
+  LogAction,
+  LogModule
 } from '@/types';
 import { 
   INITIAL_PROFILES, 
@@ -18,7 +21,8 @@ import {
   INITIAL_TRANSFERS, 
   INITIAL_AUDIT_SESSIONS, 
   INITIAL_AUDIT_ITEMS,
-  INITIAL_NOTIFICATIONS
+  INITIAL_NOTIFICATIONS,
+  INITIAL_LOGS
 } from '@/lib/mock-data';
 import { isSupabaseConfigured } from '@/lib/supabase';
 import { 
@@ -30,12 +34,20 @@ import {
 interface AppContextType {
   currentUser: UserProfile;
   setCurrentUser: (user: UserProfile) => void;
+  isAuthenticated: boolean;
+  login: (identifier: string, password: string) => { success: boolean; error?: string };
+  logout: () => void;
+  changePassword: (newPassword: string) => { success: boolean; error?: string };
+
   profiles: UserProfile[];
   assets: Asset[];
   transfers: TransferRecord[];
   auditSessions: AuditSession[];
   auditItems: AuditItem[];
   notifications: AppNotification[];
+  logs: ActivityLog[];
+  addLog: (action: LogAction, module: LogModule, summary: string, details?: string) => void;
+
   isConfiguredWithSupabase: boolean;
   isGoogleSheetsConnected: boolean;
   googleSheetsStatus: 'loading' | 'connected' | 'error';
@@ -47,18 +59,22 @@ interface AppContextType {
   // Permissions
   isAdmin: boolean;
   isManager: boolean;
+  isStaff: boolean;
   canManageEquipment: boolean;
   canManageUsers: boolean;
   
   // Staff / User Management
   addProfile: (profile: Omit<UserProfile, 'id' | 'created_at'>) => void;
   updateProfile: (id: string, updates: Partial<UserProfile>) => void;
+  deleteProfile: (id: string) => { success: boolean; error?: string };
+  batchDeleteProfiles: (ids: string[]) => void;
   toggleProfileLock: (id: string) => void;
   
   // Asset Management
   addAsset: (asset: Omit<Asset, 'id' | 'created_at' | 'updated_at'>) => void;
   updateAsset: (id: string, updates: Partial<Asset>) => void;
   deleteAsset: (id: string) => void;
+  batchDeleteAssets: (ids: string[]) => void;
   reportAssetIssue: (assetId: string, reason: AlertReason, notes?: string) => void;
   resolveAssetIssue: (assetId: string, targetStatus: AssetStatus) => void;
   
@@ -73,6 +89,10 @@ interface AppContextType {
     giverPhotos: string[];
   }) => { success: boolean; error?: string };
   
+  updateTransfer: (id: string, updates: Partial<TransferRecord>) => void;
+  deleteTransfer: (id: string) => void;
+  batchDeleteTransfers: (ids: string[]) => void;
+
   confirmTransfer: (
     transferId: string, 
     receiverNotes?: string, 
@@ -83,6 +103,8 @@ interface AppContextType {
   
   // Audit Management
   createAuditSession: (title: string, notes?: string) => string;
+  updateAuditSession: (sessionId: string, updates: Partial<AuditSession>) => void;
+  deleteAuditSession: (sessionId: string) => void;
   recordAuditScan: (params: {
     sessionId: string;
     assetCode: string;
@@ -91,6 +113,8 @@ interface AppContextType {
     actualStatus: AssetStatus;
     notes?: string;
   }) => { success: boolean; item?: AuditItem; error?: string };
+  deleteAuditItem: (id: string) => void;
+  batchDeleteAuditItems: (ids: string[]) => void;
   completeAuditSession: (sessionId: string) => void;
   
   // Notifications & Push on Phone
@@ -112,22 +136,26 @@ const GOOGLE_SHEET_URL = 'https://docs.google.com/spreadsheets/d/10eUWTeN5AmmOkE
 
 const STORAGE_KEYS = {
   CURRENT_USER: 'mmm_current_user',
+  AUTH_USER_ID: 'mmm_auth_user_id',
   PROFILES: 'mmm_profiles',
   ASSETS: 'mmm_assets',
   TRANSFERS: 'mmm_transfers',
   AUDIT_SESSIONS: 'mmm_audit_sessions',
   AUDIT_ITEMS: 'mmm_audit_items',
   NOTIFICATIONS: 'mmm_notifications',
+  LOGS: 'mmm_activity_logs',
 };
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [profiles, setProfiles] = useState<UserProfile[]>(INITIAL_PROFILES);
   const [currentUser, setCurrentUser] = useState<UserProfile>(INITIAL_PROFILES[0]);
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(true);
   const [assets, setAssets] = useState<Asset[]>(INITIAL_ASSETS);
   const [transfers, setTransfers] = useState<TransferRecord[]>(INITIAL_TRANSFERS);
   const [auditSessions, setAuditSessions] = useState<AuditSession[]>(INITIAL_AUDIT_SESSIONS);
   const [auditItems, setAuditItems] = useState<AuditItem[]>(INITIAL_AUDIT_ITEMS);
   const [notifications, setNotifications] = useState<AppNotification[]>(INITIAL_NOTIFICATIONS);
+  const [logs, setLogs] = useState<ActivityLog[]>(INITIAL_LOGS);
   
   const [googleSheetsStatus, setGoogleSheetsStatus] = useState<'loading' | 'connected' | 'error'>('loading');
   const [googleSheetsError, setGoogleSheetsError] = useState<string | null>(null);
@@ -278,6 +306,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               localStorage.setItem(STORAGE_KEYS.AUDIT_SESSIONS, JSON.stringify(json.data.auditSessions));
             } catch (e) {}
           }
+          // 5. Đồng bộ Nhật ký hoạt động
+          if (Array.isArray(json.data.logs)) {
+            setLogs(json.data.logs);
+            try {
+              localStorage.setItem(STORAGE_KEYS.LOGS, JSON.stringify(json.data.logs));
+            } catch (e) {}
+          }
         }
         syncFailuresRef.current = 0;
         lastSyncTimeRef.current = Date.now();
@@ -339,6 +374,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const storedItems = localStorage.getItem(STORAGE_KEYS.AUDIT_ITEMS);
       const storedNotifications = localStorage.getItem(STORAGE_KEYS.NOTIFICATIONS);
       const storedUser = localStorage.getItem(STORAGE_KEYS.CURRENT_USER);
+      const storedLogs = localStorage.getItem(STORAGE_KEYS.LOGS);
+      const storedAuthUserId = localStorage.getItem(STORAGE_KEYS.AUTH_USER_ID);
 
       if (storedProfiles) setProfiles(JSON.parse(storedProfiles));
       if (storedAssets) setAssets(JSON.parse(storedAssets));
@@ -346,12 +383,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (storedSessions) setAuditSessions(JSON.parse(storedSessions));
       if (storedItems) setAuditItems(JSON.parse(storedItems));
       if (storedNotifications) setNotifications(JSON.parse(storedNotifications));
+      if (storedLogs) setLogs(JSON.parse(storedLogs));
       
       if (storedUser) {
         const parsed = JSON.parse(storedUser);
         const exists = (storedProfiles ? JSON.parse(storedProfiles) : INITIAL_PROFILES)
           .find((p: UserProfile) => p.id === parsed.id);
         if (exists) setCurrentUser(exists);
+      }
+
+      if (storedAuthUserId) {
+        setIsAuthenticated(true);
       }
     } catch (err) {
       console.error('Lỗi đọc local storage:', err);
@@ -422,8 +464,91 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Roles check
   const isAdmin = currentUser?.role === 'admin';
   const isManager = currentUser?.role === 'manager';
+  const isStaff = currentUser?.role === 'staff';
   const canManageEquipment = isAdmin || isManager;
   const canManageUsers = isAdmin;
+
+  // Helper ghi nhật ký hoạt động
+  const addLog = useCallback((action: LogAction, module: LogModule, summary: string, details?: string) => {
+    const user = currentUserRef.current;
+    const log: ActivityLog = {
+      id: `log-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      timestamp: new Date().toISOString(),
+      user_id: user?.id || 'system',
+      user_name: user?.full_name || 'Hệ thống',
+      user_role: user?.role || 'staff',
+      action,
+      module,
+      summary,
+      details,
+    };
+    setLogs(prev => [log, ...prev].slice(0, 500));
+    try {
+      localStorage.setItem(STORAGE_KEYS.LOGS, JSON.stringify([log, ...logs].slice(0, 500)));
+    } catch (e) {}
+    dispatchToSheets('append_log', { log });
+  }, [dispatchToSheets, logs]);
+
+  // Auth: Login, Logout, Change Password
+  const login = useCallback((identifier: string, password: string) => {
+    const cleanId = identifier.trim().toLowerCase();
+    const cleanPass = password.trim();
+
+    const targetUser = profiles.find(p => 
+      p.email?.toLowerCase() === cleanId ||
+      p.phone?.replace(/\s+/g, '') === cleanId.replace(/\s+/g, '') ||
+      p.full_name?.toLowerCase() === cleanId
+    );
+
+    if (!targetUser) {
+      return { success: false, error: 'Không tìm thấy tài khoản nhân viên phù hợp!' };
+    }
+
+    if (targetUser.status === 'locked') {
+      return { success: false, error: 'Tài khoản này đã bị khóa (nhân sự nghỉ việc)!' };
+    }
+
+    const expectedPass = targetUser.password || (targetUser.role === 'admin' ? 'admin' : '123456');
+    if (cleanPass !== expectedPass) {
+      return { success: false, error: 'Mật khẩu không chính xác! Vui lòng thử lại.' };
+    }
+
+    setCurrentUser(targetUser);
+    setIsAuthenticated(true);
+    try {
+      localStorage.setItem(STORAGE_KEYS.AUTH_USER_ID, targetUser.id);
+      localStorage.setItem(STORAGE_KEYS.CURRENT_USER, JSON.stringify(targetUser));
+    } catch (e) {}
+
+    addLog('login', 'Hệ thống', `${targetUser.full_name} (${targetUser.role}) đăng nhập thành công`);
+    return { success: true };
+  }, [profiles, addLog]);
+
+  const logout = useCallback(() => {
+    const user = currentUserRef.current;
+    if (user) {
+      addLog('logout', 'Hệ thống', `${user.full_name} đăng xuất khỏi hệ thống`);
+    }
+    setIsAuthenticated(false);
+    try {
+      localStorage.removeItem(STORAGE_KEYS.AUTH_USER_ID);
+    } catch (e) {}
+  }, [addLog]);
+
+  const changePassword = useCallback((newPassword: string) => {
+    if (!newPassword || newPassword.trim().length < 4) {
+      return { success: false, error: 'Mật khẩu mới phải có ít nhất 4 ký tự!' };
+    }
+    const cleanPass = newPassword.trim();
+    const user = currentUserRef.current;
+    if (!user) return { success: false, error: 'Chưa đăng nhập' };
+
+    setProfiles(prev => prev.map(p => p.id === user.id ? { ...p, password: cleanPass } : p));
+    setCurrentUser(prev => ({ ...prev, password: cleanPass }));
+    dispatchToSheets('update_staff', { id: user.id, updates: { password: cleanPass } });
+    addLog('password_change', 'Hệ thống', `${user.full_name} đổi mật khẩu thành công`);
+    return { success: true };
+  }, [dispatchToSheets, addLog]);
 
   // 1. Quản lý nhân sự
   const addProfile = (newProfile: Omit<UserProfile, 'id' | 'created_at'>) => {
@@ -431,14 +556,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       ...newProfile,
       id: `u-${Date.now()}`,
       created_at: new Date().toISOString(),
+      password: newProfile.password || (newProfile.role === 'admin' ? 'admin' : '123456'),
     };
     setProfiles(prev => [profile, ...prev]);
 
     // Ghi sang Google Sheets
     dispatchToSheets('append_staff', { profile });
+    addLog('create', 'Nhân sự', `Thêm nhân sự mới: ${profile.full_name} (${profile.role})`);
   };
 
   const updateProfile = (id: string, updates: Partial<UserProfile>) => {
+    const target = profiles.find(p => p.id === id);
     setProfiles(prev => prev.map(p => p.id === id ? { ...p, ...updates } : p));
     if (currentUser.id === id) {
       setCurrentUser(prev => ({ ...prev, ...updates }));
@@ -446,6 +574,27 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     // Ghi sang Google Sheets
     dispatchToSheets('update_staff', { id, updates });
+    addLog('update', 'Nhân sự', `Cập nhật thông tin nhân sự: ${target?.full_name || id}`, JSON.stringify(updates));
+  };
+
+  const deleteProfile = (id: string): { success: boolean; error?: string } => {
+    if (currentUser.id === id) {
+      return { success: false, error: 'Không thể tự xóa tài khoản của chính bạn đang đăng nhập!' };
+    }
+    const target = profiles.find(p => p.id === id);
+    setProfiles(prev => prev.filter(p => p.id !== id));
+    dispatchToSheets('delete_staff', { id, name: target?.full_name });
+    addLog('delete', 'Nhân sự', `Xóa nhân sự: ${target?.full_name || id}`);
+    return { success: true };
+  };
+
+  const batchDeleteProfiles = (ids: string[]) => {
+    const validIds = ids.filter(id => id !== currentUser.id);
+    if (validIds.length === 0) return;
+    const targetNames = profiles.filter(p => validIds.includes(p.id)).map(p => p.full_name);
+    setProfiles(prev => prev.filter(p => !validIds.includes(p.id)));
+    dispatchToSheets('batch_delete_staff', { ids: validIds });
+    addLog('batch_delete', 'Nhân sự', `Xóa hàng loạt ${validIds.length} nhân sự`, targetNames.join(', '));
   };
 
   const toggleProfileLock = (id: string) => {
@@ -462,6 +611,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     // Ghi sang Google Sheets
     dispatchToSheets('update_staff', { id, updates: { status: nextStatus } });
+    addLog('update', 'Nhân sự', `${nextStatus === 'locked' ? 'Khóa' : 'Mở khóa'} tài khoản: ${target.full_name}`);
   };
 
   // 2. Quản lý tài sản
@@ -483,6 +633,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     // Ghi sang Google Sheets
     dispatchToSheets('append_asset', { asset });
+    addLog('create', 'Thiết bị', `Thêm thiết bị mới: ${asset.name} (${asset.code})`);
   };
 
   const updateAsset = (id: string, updates: Partial<Asset>) => {
@@ -507,6 +658,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     // Ghi sang Google Sheets
     dispatchToSheets('update_asset', { code: targetAsset.code, updates });
+    addLog('update', 'Thiết bị', `Cập nhật thiết bị ${targetAsset.code} - ${targetAsset.name}`, JSON.stringify(updates));
   };
 
   const deleteAsset = (id: string) => {
@@ -517,6 +669,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     // Xóa trên Google Sheets
     dispatchToSheets('delete_asset', { code: targetAsset.code });
+    addLog('delete', 'Thiết bị', `Xóa thiết bị: ${targetAsset.code} - ${targetAsset.name}`);
+  };
+
+  const batchDeleteAssets = (ids: string[]) => {
+    if (!ids || ids.length === 0) return;
+    const targetAssets = assets.filter(a => ids.includes(a.id));
+    const targetCodes = targetAssets.map(a => a.code);
+    setAssets(prev => prev.filter(a => !ids.includes(a.id)));
+    dispatchToSheets('batch_delete_assets', { codes: targetCodes });
+    addLog('batch_delete', 'Thiết bị', `Xóa hàng loạt ${ids.length} thiết bị`, targetCodes.join(', '));
   };
 
   const reportAssetIssue = (assetId: string, reason: AlertReason, notes?: string) => {
@@ -657,8 +819,30 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       ),
     };
     dispatchToSheets('append_transfer', { transfer: transferPayload });
+    addLog('transfer_create', 'Mượn – Trả', `Tạo bàn giao thiết bị: ${asset.name} (${asset.code}) cho ${toUser.full_name}`);
 
     return { success: true };
+  };
+
+  const updateTransfer = (id: string, updates: Partial<TransferRecord>) => {
+    const target = transfers.find(t => t.id === id);
+    setTransfers(prev => prev.map(t => t.id === id ? { ...t, ...updates } : t));
+    dispatchToSheets('update_transfer', { transferId: id, updates });
+    addLog('update', 'Mượn – Trả', `Sửa thông tin bàn giao thiết bị ${target?.asset_code || id}`, JSON.stringify(updates));
+  };
+
+  const deleteTransfer = (id: string) => {
+    const target = transfers.find(t => t.id === id);
+    setTransfers(prev => prev.filter(t => t.id !== id));
+    dispatchToSheets('delete_transfer', { transferId: id });
+    addLog('delete', 'Mượn – Trả', `Xóa giao dịch bàn giao ${target?.asset_code || id} (${target?.asset_name || ''})`);
+  };
+
+  const batchDeleteTransfers = (ids: string[]) => {
+    if (!ids || ids.length === 0) return;
+    setTransfers(prev => prev.filter(t => !ids.includes(t.id)));
+    dispatchToSheets('batch_delete_transfers', { ids });
+    addLog('batch_delete', 'Mượn – Trả', `Xóa hàng loạt ${ids.length} giao dịch bàn giao`);
   };
 
   const confirmTransfer = (
@@ -768,6 +952,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       alertReason: null,
     });
 
+    addLog('transfer_confirm', 'Mượn – Trả', `Xác nhận nhận thiết bị ${transfer.asset_name} (${transfer.asset_code}) thành công`);
+
     return { success: true };
   };
 
@@ -813,6 +999,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     });
 
+    addLog('transfer_reject', 'Mượn – Trả', `Từ chối nhận thiết bị ${transfer.asset_name} (${transfer.asset_code}): ${reason}`);
+
     return { success: true };
   };
 
@@ -828,7 +1016,37 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       notes,
     };
     setAuditSessions(prev => [newSession, ...prev]);
+    addLog('audit_session_create', 'Kiểm kê', `Tạo đợt kiểm kê mới: ${title}`);
     return newSession.id;
+  };
+
+  const updateAuditSession = (sessionId: string, updates: Partial<AuditSession>) => {
+    setAuditSessions(prev => prev.map(s => s.id === sessionId ? { ...s, ...updates } : s));
+    addLog('update', 'Kiểm kê', `Cập nhật đợt kiểm kê ${sessionId}`, JSON.stringify(updates));
+  };
+
+  const deleteAuditSession = (sessionId: string) => {
+    const target = auditSessions.find(s => s.id === sessionId);
+    setAuditSessions(prev => prev.filter(s => s.id !== sessionId));
+    setAuditItems(prev => prev.filter(i => i.session_id !== sessionId));
+    dispatchToSheets('delete_audit_session', { sessionId });
+    addLog('delete', 'Kiểm kê', `Xóa đợt kiểm kê: ${target?.title || sessionId}`);
+  };
+
+  const deleteAuditItem = (id: string) => {
+    const target = auditItems.find(i => i.id === id);
+    setAuditItems(prev => prev.filter(i => i.id !== id));
+    dispatchToSheets('delete_audit_item', { id });
+    addLog('delete', 'Kiểm kê', `Xóa dòng kiểm kê thiết bị ${target?.asset_code || id}`);
+  };
+
+  const batchDeleteAuditItems = (ids: string[]) => {
+    if (!ids || ids.length === 0) return;
+    setAuditItems(prev => prev.filter(i => !ids.includes(i.id)));
+    for (const id of ids) {
+      dispatchToSheets('delete_audit_item', { id });
+    }
+    addLog('batch_delete', 'Kiểm kê', `Xóa hàng loạt ${ids.length} dòng kiểm kê`);
   };
 
   const recordAuditScan = (params: {
@@ -897,6 +1115,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       sessionTitle: session ? session.title : 'Kiểm kê thực tế'
     });
 
+    addLog('audit_scan', 'Kiểm kê', `Quét kiểm kê mã ${params.assetCode} (${hasDiscrepancy ? 'Có sai lệch' : 'Khớp chuẩn'})`);
+
     return { success: true, item: newItem };
   };
 
@@ -911,6 +1131,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
       return s;
     }));
+    addLog('update', 'Kiểm kê', `Hoàn tất đợt kiểm kê ${sessionId}`);
   };
 
   // Notification actions
@@ -951,6 +1172,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setAuditSessions(INITIAL_AUDIT_SESSIONS);
     setAuditItems(INITIAL_AUDIT_ITEMS);
     setNotifications(INITIAL_NOTIFICATIONS);
+    setLogs(INITIAL_LOGS);
     localStorage.clear();
   };
 
@@ -975,12 +1197,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       value={{
         currentUser,
         setCurrentUser,
+        isAuthenticated,
+        login,
+        logout,
+        changePassword,
         profiles,
         assets,
         transfers,
         auditSessions,
         auditItems,
         notifications,
+        logs,
+        addLog,
         isConfiguredWithSupabase: isSupabaseConfigured(),
         isGoogleSheetsConnected,
         googleSheetsStatus,
@@ -991,25 +1219,36 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         
         isAdmin,
         isManager,
+        isStaff,
         canManageEquipment,
         canManageUsers,
         
         addProfile,
         updateProfile,
+        deleteProfile,
+        batchDeleteProfiles,
         toggleProfileLock,
         
         addAsset,
         updateAsset,
         deleteAsset,
+        batchDeleteAssets,
         reportAssetIssue,
         resolveAssetIssue,
         
         initiateTransfer,
+        updateTransfer,
+        deleteTransfer,
+        batchDeleteTransfers,
         confirmTransfer,
         rejectTransfer,
         
         createAuditSession,
+        updateAuditSession,
+        deleteAuditSession,
         recordAuditScan,
+        deleteAuditItem,
+        batchDeleteAuditItems,
         completeAuditSession,
 
         unreadNotificationsCount,

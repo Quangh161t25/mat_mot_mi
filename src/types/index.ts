@@ -8,6 +8,7 @@ export interface UserProfile {
   phone: string;
   role: UserRole;
   status: UserStatus;
+  password?: string;
   avatar_url?: string;
   created_at: string;
 }
@@ -130,4 +131,34 @@ export interface AppNotification {
   link: string;
   is_read: boolean;
   created_at: string;
+}
+
+export type LogAction = 
+  | 'create' 
+  | 'update' 
+  | 'delete' 
+  | 'batch_delete' 
+  | 'transfer_create' 
+  | 'transfer_confirm' 
+  | 'transfer_reject' 
+  | 'issue_report' 
+  | 'issue_resolve' 
+  | 'audit_scan' 
+  | 'audit_session_create'
+  | 'login' 
+  | 'logout'
+  | 'password_change';
+
+export type LogModule = 'Thiết bị' | 'Mượn – Trả' | 'Nhân sự' | 'Kiểm kê' | 'Hệ thống';
+
+export interface ActivityLog {
+  id: string;
+  timestamp: string;
+  user_id: string;
+  user_name: string;
+  user_role: UserRole;
+  action: LogAction;
+  module: LogModule;
+  summary: string;
+  details?: string;
 }

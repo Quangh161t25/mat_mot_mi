@@ -5,11 +5,19 @@ import {
   appendAssetToSheet,
   updateAssetInSheet,
   deleteAssetInSheet,
+  batchDeleteAssetsInSheet,
   appendStaffToSheet,
   updateStaffInSheet,
+  deleteStaffInSheet,
+  batchDeleteStaffInSheet,
   appendTransferToSheet, 
   updateTransferInSheet,
-  appendAuditToSheet, 
+  deleteTransferInSheet,
+  batchDeleteTransfersInSheet,
+  appendAuditToSheet,
+  deleteAuditItemInSheet,
+  deleteAuditSessionInSheet,
+  appendLogToSheet,
   SPREADSHEET_ID, 
   getSheetsClient,
   getGoogleAuthDiagnostics
@@ -131,6 +139,10 @@ export async function POST(req: Request) {
         await deleteAssetInSheet(payload.code);
         return NextResponse.json({ success: true }, { headers: corsAndNoCacheHeaders });
 
+      case 'batch_delete_assets':
+        await batchDeleteAssetsInSheet(payload.codes);
+        return NextResponse.json({ success: true }, { headers: corsAndNoCacheHeaders });
+
       // 2. Quản lý nhân sự
       case 'append_staff':
         await appendStaffToSheet(payload.profile);
@@ -138,6 +150,14 @@ export async function POST(req: Request) {
 
       case 'update_staff':
         await updateStaffInSheet(payload.id, payload.updates);
+        return NextResponse.json({ success: true }, { headers: corsAndNoCacheHeaders });
+
+      case 'delete_staff':
+        await deleteStaffInSheet(payload.id);
+        return NextResponse.json({ success: true }, { headers: corsAndNoCacheHeaders });
+
+      case 'batch_delete_staff':
+        await batchDeleteStaffInSheet(payload.ids);
         return NextResponse.json({ success: true }, { headers: corsAndNoCacheHeaders });
 
       // 3. Mượn trả
@@ -151,6 +171,14 @@ export async function POST(req: Request) {
 
       case 'update_transfer':
         await updateTransferInSheet(payload.transferId, payload.updates);
+        return NextResponse.json({ success: true }, { headers: corsAndNoCacheHeaders });
+
+      case 'delete_transfer':
+        await deleteTransferInSheet(payload.id);
+        return NextResponse.json({ success: true }, { headers: corsAndNoCacheHeaders });
+
+      case 'batch_delete_transfers':
+        await batchDeleteTransfersInSheet(payload.ids);
         return NextResponse.json({ success: true }, { headers: corsAndNoCacheHeaders });
 
       // Cập nhật trạng thái thiết bị sau khi bàn giao xong hoặc xử lý sự cố
@@ -167,6 +195,19 @@ export async function POST(req: Request) {
       // 4. Kiểm kê
       case 'append_audit':
         await appendAuditToSheet(payload.item, payload.sessionTitle || 'Kiểm kê');
+        return NextResponse.json({ success: true }, { headers: corsAndNoCacheHeaders });
+
+      case 'delete_audit_item':
+        await deleteAuditItemInSheet(payload.assetCode, payload.sessionId);
+        return NextResponse.json({ success: true }, { headers: corsAndNoCacheHeaders });
+
+      case 'delete_audit_session':
+        await deleteAuditSessionInSheet(payload.sessionId);
+        return NextResponse.json({ success: true }, { headers: corsAndNoCacheHeaders });
+
+      // 5. Nhật ký hoạt động
+      case 'append_log':
+        await appendLogToSheet(payload.log);
         return NextResponse.json({ success: true }, { headers: corsAndNoCacheHeaders });
 
       default:

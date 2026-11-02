@@ -15,11 +15,17 @@ import {
   Bell, 
   ChevronDown, 
   RotateCcw,
-  Smartphone
+  Smartphone,
+  History,
+  KeyRound,
+  LogOut,
+  LogIn
 } from 'lucide-react';
 import { QRScannerModal } from './QRScannerModal';
 import { InstallAppModal } from './InstallAppModal';
 import { NotificationDrawer } from './NotificationDrawer';
+import { LoginModal } from './LoginModal';
+import { ChangePasswordModal } from './ChangePasswordModal';
 
 export const Navbar: React.FC = () => {
   const pathname = usePathname();
@@ -27,6 +33,8 @@ export const Navbar: React.FC = () => {
   const { 
     currentUser, 
     setCurrentUser, 
+    isAuthenticated,
+    logout,
     profiles, 
     assets, 
     pendingTransfersCount, 
@@ -45,6 +53,8 @@ export const Navbar: React.FC = () => {
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const [isInstallModalOpen, setIsInstallModalOpen] = useState(false);
   const [isNotificationDrawerOpen, setIsNotificationDrawerOpen] = useState(false);
+  const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
+  const [isChangePasswordModalOpen, setIsChangePasswordModalOpen] = useState(false);
 
   const navLinks = [
     { href: '/', label: 'Dashboard', icon: LayoutDashboard },
@@ -57,6 +67,7 @@ export const Navbar: React.FC = () => {
     },
     { href: '/audit', label: 'Kiểm Kê', icon: ClipboardCheck },
     { href: '/staff', label: 'Nhân Sự', icon: Users },
+    { href: '/logs', label: 'Nhật Ký', icon: History },
   ];
 
   const handleScanSuccess = (code: string) => {
@@ -167,118 +178,155 @@ export const Navbar: React.FC = () => {
               )}
             </button>
 
-            {/* Role & User Switcher for Testing/Demo */}
-            <div className="relative">
+            {/* User Profile / Login Button */}
+            {!isAuthenticated ? (
               <button
-                onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
-                className="flex items-center gap-2 p-1 sm:px-2.5 sm:py-1.5 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-xl transition"
+                onClick={() => setIsLoginModalOpen(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-orange-600 hover:bg-orange-500 text-white rounded-xl text-xs font-bold shadow-md shadow-orange-600/20 transition active:scale-95"
               >
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={currentUser?.avatar_url || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150'}
-                  alt={currentUser?.full_name}
-                  className="w-7 h-7 rounded-lg object-cover ring-1 ring-orange-500/50"
-                />
-                <div className="text-left hidden lg:block">
-                  <div className="text-xs font-bold text-slate-800 leading-tight flex items-center gap-1">
-                    {currentUser?.full_name.split(' (')[0]}
-                    <span className={`text-[10px] px-1.5 py-0.2 rounded font-mono font-semibold ${
-                      currentUser?.role === 'admin' ? 'bg-rose-100 text-rose-700' :
-                      currentUser?.role === 'manager' ? 'bg-amber-100 text-amber-800' :
-                      'bg-blue-100 text-blue-700'
-                    }`}>
-                      {currentUser?.role === 'admin' ? 'Admin' : currentUser?.role === 'manager' ? 'Quản lý' : 'Nhân sự'}
-                    </span>
-                  </div>
-                </div>
-                <ChevronDown className="w-3.5 h-3.5 text-slate-500 hidden sm:block" />
+                <LogIn className="w-4 h-4" />
+                <span>Đăng nhập</span>
               </button>
-
-              {/* User Dropdown Menu */}
-              {isUserMenuOpen && (
-                <div className="absolute right-0 mt-2 w-72 bg-white border border-slate-200 rounded-2xl shadow-xl p-2 z-50">
-                  <div className="p-2 border-b border-slate-100">
-                    <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
-                      Chọn vai trò trải nghiệm
-                    </p>
-                    <p className="text-[10px] text-slate-400">
-                      Chuyển đổi giữa Admin, Quản lý và Nhân sự
-                    </p>
+            ) : (
+              <div className="relative">
+                <button
+                  onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
+                  className="flex items-center gap-2 p-1 sm:px-2.5 sm:py-1.5 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-xl transition"
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={currentUser?.avatar_url || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150'}
+                    alt={currentUser?.full_name}
+                    className="w-7 h-7 rounded-lg object-cover ring-1 ring-orange-500/50"
+                  />
+                  <div className="text-left hidden lg:block">
+                    <div className="text-xs font-bold text-slate-800 leading-tight flex items-center gap-1">
+                      {currentUser?.full_name.split(' (')[0]}
+                      <span className={`text-[10px] px-1.5 py-0.2 rounded font-mono font-semibold ${
+                        currentUser?.role === 'admin' ? 'bg-rose-100 text-rose-700' :
+                        currentUser?.role === 'manager' ? 'bg-amber-100 text-amber-800' :
+                        'bg-blue-100 text-blue-700'
+                      }`}>
+                        {currentUser?.role === 'admin' ? 'Admin' : currentUser?.role === 'manager' ? 'Quản lý' : 'Nhân sự'}
+                      </span>
+                    </div>
                   </div>
+                  <ChevronDown className="w-3.5 h-3.5 text-slate-500 hidden sm:block" />
+                </button>
 
-                  <div className="py-1 space-y-1 max-h-60 overflow-y-auto">
-                    {profiles.map(p => {
-                      const isCurrent = currentUser?.id === p.id;
-                      return (
-                        <button
-                          key={p.id}
-                          onClick={() => {
-                            setCurrentUser(p);
-                            setIsUserMenuOpen(false);
-                          }}
-                          className={`w-full text-left p-2 rounded-xl text-xs flex items-center gap-2.5 transition ${
-                            isCurrent
-                              ? 'bg-orange-50 text-orange-700 font-bold border border-orange-200'
-                              : 'text-slate-700 hover:bg-slate-50'
-                          }`}
-                        >
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img
-                            src={p.avatar_url || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150'}
-                            alt={p.full_name}
-                            className="w-7 h-7 rounded-lg object-cover"
-                          />
-                          <div className="flex-1 truncate">
-                            <div className="truncate font-semibold">{p.full_name}</div>
-                            <div className="text-[10px] text-slate-400">
-                              {p.status === 'locked' ? (
-                                <span className="text-rose-600 font-bold">(Đã khóa)</span>
-                              ) : (
-                                p.email
-                              )}
-                            </div>
-                          </div>
-                          <span className={`text-[10px] px-1.5 py-0.5 rounded font-mono font-bold ${
-                            p.role === 'admin' ? 'bg-rose-100 text-rose-700' :
-                            p.role === 'manager' ? 'bg-amber-100 text-amber-800' :
-                            'bg-blue-100 text-blue-700'
-                          }`}>
-                            {p.role}
-                          </span>
-                        </button>
-                      );
-                    })}
-                  </div>
+                {/* User Dropdown Menu */}
+                {isUserMenuOpen && (
+                  <div className="absolute right-0 mt-2 w-80 bg-white border border-slate-200 rounded-2xl shadow-xl p-3 z-50 animate-in fade-in zoom-in-95 duration-150">
+                    <div className="p-2 border-b border-slate-100 flex items-center gap-3">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={currentUser?.avatar_url || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150'}
+                        alt={currentUser?.full_name}
+                        className="w-10 h-10 rounded-xl object-cover ring-1 ring-orange-500/50"
+                      />
+                      <div className="flex-1 min-w-0">
+                        <div className="font-bold text-slate-900 text-sm truncate">{currentUser?.full_name}</div>
+                        <div className="text-xs text-slate-400 truncate">{currentUser?.email}</div>
+                      </div>
+                    </div>
 
-                  <div className="pt-2 border-t border-slate-100 space-y-1">
-                    <button
-                      onClick={() => {
-                        setIsUserMenuOpen(false);
-                        setIsInstallModalOpen(true);
-                      }}
-                      className="w-full py-1.5 px-2 text-slate-700 hover:bg-slate-100 rounded-xl text-[11px] font-bold flex items-center gap-2 transition"
-                    >
-                      <Smartphone className="w-3.5 h-3.5 text-orange-600" />
-                      <span>Cài đặt App vào điện thoại</span>
-                    </button>
-
-                    <button
-                      onClick={() => {
-                        if (confirm('Làm sạch toàn bộ dữ liệu trên máy để bắt đầu nhập mới từ đầu?')) {
-                          resetToDemoData();
+                    <div className="py-2 space-y-1">
+                      <button
+                        onClick={() => {
                           setIsUserMenuOpen(false);
-                          window.location.reload();
-                        }
-                      }}
-                      className="w-full py-1.5 px-2 text-slate-500 hover:text-slate-800 hover:bg-slate-50 rounded-xl text-[11px] flex items-center gap-2 transition"
-                    >
-                      <RotateCcw className="w-3.5 h-3.5 text-orange-600" />
-                      <span>Xóa dữ liệu cũ (Bắt đầu thêm mới)</span>
-                    </button>
+                          setIsChangePasswordModalOpen(true);
+                        }}
+                        className="w-full py-2 px-3 text-slate-700 hover:bg-slate-100 rounded-xl text-xs font-bold flex items-center gap-2.5 transition"
+                      >
+                        <KeyRound className="w-4 h-4 text-orange-600" />
+                        <span>Đổi mật khẩu tài khoản</span>
+                      </button>
+
+                      <button
+                        onClick={() => {
+                          setIsUserMenuOpen(false);
+                          logout();
+                          setIsLoginModalOpen(true);
+                        }}
+                        className="w-full py-2 px-3 text-rose-600 hover:bg-rose-50 rounded-xl text-xs font-bold flex items-center gap-2.5 transition"
+                      >
+                        <LogOut className="w-4 h-4 text-rose-600" />
+                        <span>Đăng xuất</span>
+                      </button>
+                    </div>
+
+                    <div className="pt-2 border-t border-slate-100">
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1.5 px-1">
+                        Chuyển nhanh tài khoản test
+                      </p>
+                      <div className="space-y-1 max-h-44 overflow-y-auto">
+                        {profiles.map(p => {
+                          const isCurrent = currentUser?.id === p.id;
+                          return (
+                            <button
+                              key={p.id}
+                              onClick={() => {
+                                setCurrentUser(p);
+                                setIsUserMenuOpen(false);
+                              }}
+                              className={`w-full text-left p-1.5 rounded-xl text-xs flex items-center gap-2 transition ${
+                                isCurrent
+                                  ? 'bg-orange-50 text-orange-700 font-bold border border-orange-200'
+                                  : 'text-slate-700 hover:bg-slate-50'
+                              }`}
+                            >
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img
+                                src={p.avatar_url || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150'}
+                                alt={p.full_name}
+                                className="w-6 h-6 rounded-lg object-cover"
+                              />
+                              <div className="flex-1 truncate">
+                                <span className="truncate">{p.full_name}</span>
+                              </div>
+                              <span className={`text-[9px] px-1.5 py-0.2 rounded font-mono font-bold ${
+                                p.role === 'admin' ? 'bg-rose-100 text-rose-700' :
+                                p.role === 'manager' ? 'bg-amber-100 text-amber-800' :
+                                'bg-blue-100 text-blue-700'
+                              }`}>
+                                {p.role}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    <div className="pt-2 border-t border-slate-100 space-y-1">
+                      <button
+                        onClick={() => {
+                          setIsUserMenuOpen(false);
+                          setIsInstallModalOpen(true);
+                        }}
+                        className="w-full py-1.5 px-2 text-slate-700 hover:bg-slate-100 rounded-xl text-[11px] font-bold flex items-center gap-2 transition"
+                      >
+                        <Smartphone className="w-3.5 h-3.5 text-orange-600" />
+                        <span>Cài đặt App vào điện thoại</span>
+                      </button>
+
+                      <button
+                        onClick={() => {
+                          if (confirm('Làm sạch toàn bộ dữ liệu trên máy để bắt đầu nhập mới từ đầu?')) {
+                            resetToDemoData();
+                            setIsUserMenuOpen(false);
+                            window.location.reload();
+                          }
+                        }}
+                        className="w-full py-1.5 px-2 text-slate-500 hover:text-slate-800 hover:bg-slate-50 rounded-xl text-[11px] flex items-center gap-2 transition"
+                      >
+                        <RotateCcw className="w-3.5 h-3.5 text-orange-600" />
+                        <span>Xóa dữ liệu cũ (Bắt đầu thêm mới)</span>
+                      </button>
+                    </div>
                   </div>
-                </div>
-              )}
-            </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
       </header>
@@ -359,6 +407,19 @@ export const Navbar: React.FC = () => {
         isOpen={isNotificationDrawerOpen}
         onClose={() => setIsNotificationDrawerOpen(false)}
         onOpenInstallModal={() => setIsInstallModalOpen(true)}
+      />
+
+      {/* Login Modal */}
+      <LoginModal
+        isOpen={!isAuthenticated || isLoginModalOpen}
+        onClose={() => setIsLoginModalOpen(false)}
+        canDismiss={isAuthenticated}
+      />
+
+      {/* Change Password Modal */}
+      <ChangePasswordModal
+        isOpen={isChangePasswordModalOpen}
+        onClose={() => setIsChangePasswordModalOpen(false)}
       />
     </>
   );
