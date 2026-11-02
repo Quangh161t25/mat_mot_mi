@@ -1,7 +1,7 @@
 import { google } from 'googleapis';
 import path from 'path';
 import fs from 'fs';
-import { Asset, UserProfile, TransferRecord, AuditItem, AuditSession, ActivityLog } from '@/types';
+import { Asset, UserProfile, TransferRecord, AuditItem, AuditSession, ActivityLog, UserPermissions } from '@/types';
 import { INITIAL_PROFILES } from '@/lib/mock-data';
 
 export const SPREADSHEET_ID = 
@@ -197,7 +197,7 @@ export async function fetchAllFromSheets(forceRefresh = false) {
       spreadsheetId: SPREADSHEET_ID,
       ranges: [
         'THIET_BI!A2:N1000',
-        'NHAN_SU!A2:I1000',
+        'NHAN_SU!A2:J1000',
         'MUON_TRA!A2:P1000',
         'KIEM_KE!A2:M1000',
         'NHAT_KY!A2:I1000',
@@ -235,17 +235,26 @@ export async function fetchAllFromSheets(forceRefresh = false) {
     // Parse NHAN_SU
     const profiles: UserProfile[] = (staffRange?.values || [])
       .filter((row: any) => row[0] && row[0].toString().trim() !== '')
-      .map((row: any, idx: number) => ({
-        id: row[0] || `u-${idx + 1}`,
-        full_name: row[1] || 'Nhân sự',
-        email: row[2] || 'staff@matmotmi.vn',
-        phone: row[3] || '',
-        role: (row[4] || 'staff') as any,
-        status: (row[5] || 'active') as any,
-        avatar_url: row[6] || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150',
-        created_at: row[7] || new Date().toISOString(),
-        password: row[8] || (row[4] === 'admin' ? 'admin' : '123456'),
-      }));
+      .map((row: any, idx: number) => {
+        let parsedPermissions = undefined;
+        if (row[9]) {
+          try {
+            parsedPermissions = typeof row[9] === 'string' ? JSON.parse(row[9]) : row[9];
+          } catch (e) {}
+        }
+        return {
+          id: row[0] || `u-${idx + 1}`,
+          full_name: row[1] || 'Nhân sự',
+          email: row[2] || 'staff@matmotmi.vn',
+          phone: row[3] || '',
+          role: (row[4] || 'staff') as any,
+          status: (row[5] || 'active') as any,
+          avatar_url: row[6] || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150',
+          created_at: row[7] || new Date().toISOString(),
+          password: row[8] || (row[4] === 'admin' ? 'admin' : '123456'),
+          permissions: parsedPermissions,
+        };
+      });
 
     // Parse MUON_TRA
     const transfers: TransferRecord[] = (transfersRange?.values || [])
@@ -491,6 +500,7 @@ export async function appendStaffToSheet(profile: UserProfile) {
     profile.avatar_url || '',
     profile.created_at || new Date().toISOString(),
     profile.password || '123456',
+    profile.permissions ? JSON.stringify(profile.permissions) : '',
   ];
 
   await sheets.spreadsheets.values.append({
@@ -508,7 +518,7 @@ export async function updateStaffInSheet(id: string, updates: Partial<UserProfil
 
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId: SPREADSHEET_ID,
-    range: 'NHAN_SU!A2:I1000',
+    range: 'NHAN_SU!A2:J1000',
   });
 
   const rows = res.data.values || [];
@@ -528,14 +538,91 @@ export async function updateStaffInSheet(id: string, updates: Partial<UserProfil
     updates.avatar_url !== undefined ? updates.avatar_url : existingRow[6],
     existingRow[7] || new Date().toISOString(),
     updates.password !== undefined ? updates.password : (existingRow[8] || '123456'),
+    updates.permissions !== undefined 
+      ? JSON.stringify(updates.permissions) 
+      : (existingRow[9] || ''),
   ];
 
   await sheets.spreadsheets.values.update({
     spreadsheetId: SPREADSHEET_ID,
-    range: `NHAN_SU!A${actualRow}:I${actualRow}`,
+    range: `NHAN_SU!A${actualRow}:J${actualRow}`,
     valueInputOption: 'USER_ENTERED',
     requestBody: { values: [newRow] },
   });
+}
+
+export async function updateStaffPermissionsInSheet(userId: string, permissions: UserPermissions) {
+  invalidateSheetsCache();
+  const sheets = getSheetsClient();
+  if (!sheets) throw new Error('Google Sheets chưa sẵn sàng');
+
+  // 1. Cập nhật cột J trong NHAN_SU
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId: SPREADSHEET_ID,
+    range: 'NHAN_SU!A2:J1000',
+  });
+  const rows = res.data.values || [];
+  const rowIndex = rows.findIndex(r => r[0] && r[0].toString().trim() === userId.trim());
+
+  let userName = '';
+  let userRole = 'staff';
+
+  if (rowIndex !== -1) {
+    const actualRow = rowIndex + 2;
+    userName = rows[rowIndex][1] || '';
+    userRole = rows[rowIndex][4] || 'staff';
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: SPREADSHEET_ID,
+      range: `NHAN_SU!J${actualRow}`,
+      valueInputOption: 'USER_ENTERED',
+      requestBody: { values: [[JSON.stringify(permissions)]] },
+    });
+  }
+
+  // 2. Ghi bảng phân quyền dễ đọc vào tab PHAN_QUYEN
+  try {
+    const fmtCrud = (crud: { view: boolean; create: boolean; edit: boolean; delete: boolean }) => 
+      `Xem: ${crud.view ? 'Có' : 'Không'} | Thêm: ${crud.create ? 'Có' : 'Không'} | Sửa: ${crud.edit ? 'Có' : 'Không'} | Xóa: ${crud.delete ? 'Có' : 'Không'}`;
+
+    const pqRes = await sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_ID,
+      range: 'PHAN_QUYEN!A2:J1000',
+    });
+    const pqRows = pqRes.data.values || [];
+    const pqIdx = pqRows.findIndex(r => r[0] && r[0].toString().trim() === userId.trim());
+
+    const pqRow = [
+      userId,
+      userName || userId,
+      userRole,
+      fmtCrud(permissions.assets),
+      fmtCrud(permissions.transfers),
+      fmtCrud(permissions.staff),
+      fmtCrud(permissions.audit),
+      permissions.logs.view ? 'Có xem' : 'Không',
+      JSON.stringify(permissions),
+      new Date().toLocaleString('vi-VN'),
+    ];
+
+    if (pqIdx !== -1) {
+      const actualRow = pqIdx + 2;
+      await sheets.spreadsheets.values.update({
+        spreadsheetId: SPREADSHEET_ID,
+        range: `PHAN_QUYEN!A${actualRow}:J${actualRow}`,
+        valueInputOption: 'USER_ENTERED',
+        requestBody: { values: [pqRow] },
+      });
+    } else {
+      await sheets.spreadsheets.values.append({
+        spreadsheetId: SPREADSHEET_ID,
+        range: 'PHAN_QUYEN!A2',
+        valueInputOption: 'USER_ENTERED',
+        requestBody: { values: [pqRow] },
+      });
+    }
+  } catch (err) {
+    console.warn('Lỗi ghi tab PHAN_QUYEN:', err);
+  }
 }
 
 // ==========================================

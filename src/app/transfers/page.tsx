@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
+import Link from 'next/link';
 import { useApp } from '@/context/AppContext';
 import { TransferModal } from '@/components/TransferModal';
 import { ConfirmTransferModal } from '@/components/ConfirmTransferModal';
@@ -32,6 +33,10 @@ export default function TransfersPage() {
     transfers, 
     currentUser, 
     canManageEquipment, 
+    canViewTransfers,
+    canCreateTransfers,
+    canEditTransfers,
+    canDeleteTransfers,
     updateTransfer, 
     deleteTransfer, 
     batchDeleteTransfers 
@@ -126,6 +131,26 @@ export default function TransfersPage() {
     }
   };
 
+  if (!canViewTransfers) {
+    return (
+      <div className="py-20 text-center max-w-lg mx-auto bg-white border border-slate-200 rounded-3xl p-8 shadow-sm space-y-4">
+        <div className="w-14 h-14 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center mx-auto">
+          <ShieldCheck className="w-8 h-8" />
+        </div>
+        <h2 className="text-xl font-black text-slate-900">Không có quyền xem Mượn – Trả</h2>
+        <p className="text-sm text-slate-500 leading-relaxed">
+          Tài khoản của bạn chưa được cấp quyền Xem mô-đun Mượn – Trả thiết bị. Vui lòng liên hệ Admin để được phân quyền.
+        </p>
+        <Link
+          href="/"
+          className="inline-flex items-center gap-2 px-5 py-2.5 bg-orange-600 hover:bg-orange-500 text-white rounded-xl text-xs font-bold shadow-md shadow-orange-600/20 transition"
+        >
+          <span>Về Bảng Điều Khiển</span>
+        </Link>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       {/* Top Banner */}
@@ -140,13 +165,15 @@ export default function TransfersPage() {
           </p>
         </div>
 
-        <button
-          onClick={() => setIsTransferModalOpen(true)}
-          className="flex items-center gap-2 px-4 py-2.5 bg-orange-600 hover:bg-orange-500 text-white rounded-xl text-xs sm:text-sm font-bold shadow-md shadow-orange-600/25 transition active:scale-95"
-        >
-          <Plus className="w-4 h-4" />
-          <span>Tạo Bàn Giao Mới</span>
-        </button>
+        {canCreateTransfers && (
+          <button
+            onClick={() => setIsTransferModalOpen(true)}
+            className="flex items-center gap-2 px-4 py-2.5 bg-orange-600 hover:bg-orange-500 text-white rounded-xl text-xs sm:text-sm font-bold shadow-md shadow-orange-600/25 transition active:scale-95"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Tạo Bàn Giao Mới</span>
+          </button>
+        )}
       </div>
 
       {/* Rules Banner (Simple & Clear) */}
@@ -255,34 +282,36 @@ export default function TransfersPage() {
         </div>
 
         {/* Multi-select Batch Actions Bar */}
-        <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-slate-100 text-xs">
-          <div className="flex items-center gap-2">
-            <button
-              onClick={handleSelectAll}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold transition"
-            >
-              {selectedIds.length > 0 && selectedIds.length === filteredTransfers.length ? (
-                <CheckSquare className="w-4 h-4 text-orange-600" />
-              ) : (
-                <Square className="w-4 h-4 text-slate-400" />
-              )}
-              <span>{selectedIds.length === filteredTransfers.length ? 'Bỏ chọn tất cả' : 'Chọn tất cả'}</span>
-            </button>
-            <span className="text-slate-500">
-              Đã chọn: <strong className="text-orange-600">{selectedIds.length}</strong> / {filteredTransfers.length} giao dịch
-            </span>
-          </div>
+        {canDeleteTransfers && (
+          <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-slate-100 text-xs">
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleSelectAll}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold transition"
+              >
+                {selectedIds.length > 0 && selectedIds.length === filteredTransfers.length ? (
+                  <CheckSquare className="w-4 h-4 text-orange-600" />
+                ) : (
+                  <Square className="w-4 h-4 text-slate-400" />
+                )}
+                <span>{selectedIds.length === filteredTransfers.length ? 'Bỏ chọn tất cả' : 'Chọn tất cả'}</span>
+              </button>
+              <span className="text-slate-500">
+                Đã chọn: <strong className="text-orange-600">{selectedIds.length}</strong> / {filteredTransfers.length} giao dịch
+              </span>
+            </div>
 
-          {selectedIds.length > 0 && (
-            <button
-              onClick={handleBatchDelete}
-              className="flex items-center gap-1.5 px-3.5 py-1.5 bg-rose-600 hover:bg-rose-500 text-white rounded-xl font-bold shadow-sm shadow-rose-600/30 transition active:scale-95"
-            >
-              <Trash2 className="w-4 h-4" />
-              <span>Xóa {selectedIds.length} giao dịch đã chọn</span>
-            </button>
-          )}
-        </div>
+            {selectedIds.length > 0 && (
+              <button
+                onClick={handleBatchDelete}
+                className="flex items-center gap-1.5 px-3.5 py-1.5 bg-rose-600 hover:bg-rose-500 text-white rounded-xl font-bold shadow-sm shadow-rose-600/30 transition active:scale-95"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>Xóa {selectedIds.length} giao dịch đã chọn</span>
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Transfers List */}
@@ -315,17 +344,19 @@ export default function TransfersPage() {
                 {/* Left: Checkbox + Asset info & images */}
                 <div className="flex items-start gap-3.5 flex-1">
                   {/* Select Checkbox */}
-                  <button
-                    onClick={() => handleToggleSelect(tr.id)}
-                    className="mt-1 p-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 transition"
-                    title="Chọn để xóa"
-                  >
-                    {isSelected ? (
-                      <CheckSquare className="w-5 h-5 text-orange-600" />
-                    ) : (
-                      <Square className="w-5 h-5 text-slate-400" />
-                    )}
-                  </button>
+                  {canDeleteTransfers && (
+                    <button
+                      onClick={() => handleToggleSelect(tr.id)}
+                      className="mt-1 p-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 transition"
+                      title="Chọn để xóa"
+                    >
+                      {isSelected ? (
+                        <CheckSquare className="w-5 h-5 text-orange-600" />
+                      ) : (
+                        <Square className="w-5 h-5 text-slate-400" />
+                      )}
+                    </button>
+                  )}
 
                   {tr.asset_image && (
                     // eslint-disable-next-line @next/next/no-img-element
@@ -401,24 +432,28 @@ export default function TransfersPage() {
                     </button>
 
                     {/* Sửa */}
-                    <button
-                      onClick={() => handleOpenEdit(tr)}
-                      className="p-2 text-slate-600 hover:text-amber-600 hover:bg-amber-50 rounded-xl transition text-xs font-semibold flex items-center gap-1"
-                      title="Chỉnh sửa giao dịch"
-                    >
-                      <Pencil className="w-4 h-4 text-amber-600" />
-                      <span className="hidden lg:inline">Sửa</span>
-                    </button>
+                    {canEditTransfers && (
+                      <button
+                        onClick={() => handleOpenEdit(tr)}
+                        className="p-2 text-slate-600 hover:text-amber-600 hover:bg-amber-50 rounded-xl transition text-xs font-semibold flex items-center gap-1"
+                        title="Chỉnh sửa giao dịch"
+                      >
+                        <Pencil className="w-4 h-4 text-amber-600" />
+                        <span className="hidden lg:inline">Sửa</span>
+                      </button>
+                    )}
 
                     {/* Xóa */}
-                    <button
-                      onClick={() => handleDeleteSingle(tr)}
-                      className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition text-xs font-semibold flex items-center gap-1"
-                      title="Xóa giao dịch này"
-                    >
-                      <Trash2 className="w-4 h-4 text-rose-600" />
-                      <span className="hidden lg:inline">Xóa</span>
-                    </button>
+                    {canDeleteTransfers && (
+                      <button
+                        onClick={() => handleDeleteSingle(tr)}
+                        className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition text-xs font-semibold flex items-center gap-1"
+                        title="Xóa giao dịch này"
+                      >
+                        <Trash2 className="w-4 h-4 text-rose-600" />
+                        <span className="hidden lg:inline">Xóa</span>
+                      </button>
+                    )}
                   </div>
 
                   {/* Confirm or Status button */}

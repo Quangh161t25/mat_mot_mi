@@ -41,7 +41,19 @@ const CATEGORIES: { id: AssetCategory | 'all'; label: string }[] = [
 ];
 
 export default function AssetsPage() {
-  const { assets, profiles, canManageEquipment, addAsset, updateAsset, deleteAsset, batchDeleteAssets } = useApp();
+  const { 
+    assets, 
+    profiles, 
+    canViewAssets,
+    canCreateAssets,
+    canEditAssets,
+    canDeleteAssets,
+    canCreateTransfers,
+    addAsset, 
+    updateAsset, 
+    deleteAsset, 
+    batchDeleteAssets 
+  } = useApp();
 
   const [category, setCategory] = useState<string>('all');
   const [status, setStatus] = useState<string>('all');
@@ -185,6 +197,26 @@ export default function AssetsPage() {
     }
   };
 
+  if (!canViewAssets) {
+    return (
+      <div className="py-20 text-center max-w-lg mx-auto bg-white border border-slate-200 rounded-3xl p-8 shadow-sm space-y-4">
+        <div className="w-14 h-14 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center mx-auto">
+          <ShieldCheck className="w-8 h-8" />
+        </div>
+        <h2 className="text-xl font-black text-slate-900">Không có quyền xem thiết bị</h2>
+        <p className="text-sm text-slate-500 leading-relaxed">
+          Tài khoản của bạn chưa được cấp quyền Xem mô-đun Thiết Bị. Vui lòng liên hệ Admin để được phân quyền.
+        </p>
+        <Link
+          href="/"
+          className="inline-flex items-center gap-2 px-5 py-2.5 bg-orange-600 hover:bg-orange-500 text-white rounded-xl text-xs font-bold shadow-md shadow-orange-600/20 transition"
+        >
+          <span>Về Bảng Điều Khiển</span>
+        </Link>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       {/* Top Header */}
@@ -208,7 +240,7 @@ export default function AssetsPage() {
             <span>In Tem QR</span>
           </button>
 
-          {canManageEquipment && (
+          {canCreateAssets && (
             <button
               onClick={() => {
                 const num = assets.length + 1;
@@ -272,34 +304,36 @@ export default function AssetsPage() {
         </div>
 
         {/* Multi-select Batch Actions Bar */}
-        <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-slate-100 text-xs">
-          <div className="flex items-center gap-2">
-            <button
-              onClick={handleSelectAll}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold transition"
-            >
-              {selectedIds.length > 0 && selectedIds.length === filteredAssets.length ? (
-                <CheckSquare className="w-4 h-4 text-orange-600" />
-              ) : (
-                <Square className="w-4 h-4 text-slate-400" />
-              )}
-              <span>{selectedIds.length === filteredAssets.length ? 'Bỏ chọn tất cả' : 'Chọn tất cả'}</span>
-            </button>
-            <span className="text-slate-500">
-              Đã chọn: <strong className="text-orange-600">{selectedIds.length}</strong> / {filteredAssets.length} thiết bị
-            </span>
-          </div>
+        {canDeleteAssets && (
+          <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-slate-100 text-xs">
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleSelectAll}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold transition"
+              >
+                {selectedIds.length > 0 && selectedIds.length === filteredAssets.length ? (
+                  <CheckSquare className="w-4 h-4 text-orange-600" />
+                ) : (
+                  <Square className="w-4 h-4 text-slate-400" />
+                )}
+                <span>{selectedIds.length === filteredAssets.length ? 'Bỏ chọn tất cả' : 'Chọn tất cả'}</span>
+              </button>
+              <span className="text-slate-500">
+                Đã chọn: <strong className="text-orange-600">{selectedIds.length}</strong> / {filteredAssets.length} thiết bị
+              </span>
+            </div>
 
-          {selectedIds.length > 0 && (
-            <button
-              onClick={handleBatchDelete}
-              className="flex items-center gap-1.5 px-3.5 py-1.5 bg-rose-600 hover:bg-rose-500 text-white rounded-xl font-bold shadow-sm shadow-rose-600/30 transition active:scale-95 animate-in fade-in"
-            >
-              <Trash2 className="w-4 h-4" />
-              <span>Xóa {selectedIds.length} thiết bị đã chọn</span>
-            </button>
-          )}
-        </div>
+            {selectedIds.length > 0 && (
+              <button
+                onClick={handleBatchDelete}
+                className="flex items-center gap-1.5 px-3.5 py-1.5 bg-rose-600 hover:bg-rose-500 text-white rounded-xl font-bold shadow-sm shadow-rose-600/30 transition active:scale-95 animate-in fade-in"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>Xóa {selectedIds.length} thiết bị đã chọn</span>
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Grid of Equipment */}
@@ -329,19 +363,21 @@ export default function AssetsPage() {
                   />
 
                   {/* Selection Checkbox */}
-                  <button
-                    onClick={() => handleToggleSelect(asset.id)}
-                    className="absolute top-2.5 left-2.5 z-10 p-1 rounded-lg bg-white/90 shadow-md border border-slate-200 hover:scale-110 transition text-slate-700"
-                    title="Chọn để xóa hàng loạt"
-                  >
-                    {isSelected ? (
-                      <CheckSquare className="w-5 h-5 text-orange-600" />
-                    ) : (
-                      <Square className="w-5 h-5 text-slate-400" />
-                    )}
-                  </button>
+                  {canDeleteAssets && (
+                    <button
+                      onClick={() => handleToggleSelect(asset.id)}
+                      className="absolute top-2.5 left-2.5 z-10 p-1 rounded-lg bg-white/90 shadow-md border border-slate-200 hover:scale-110 transition text-slate-700"
+                      title="Chọn để xóa hàng loạt"
+                    >
+                      {isSelected ? (
+                        <CheckSquare className="w-5 h-5 text-orange-600" />
+                      ) : (
+                        <Square className="w-5 h-5 text-slate-400" />
+                      )}
+                    </button>
+                  )}
 
-                  <div className="absolute top-2.5 left-11">
+                  <div className={`absolute top-2.5 ${canDeleteAssets ? 'left-11' : 'left-2.5'}`}>
                     <span className="font-mono text-xs font-black bg-white/95 text-orange-700 px-2.5 py-1 rounded-lg shadow-sm border border-orange-200">
                       {asset.code}
                     </span>
@@ -400,24 +436,28 @@ export default function AssetsPage() {
                       </button>
 
                       {/* Sửa */}
-                      <button
-                        onClick={() => handleOpenEdit(asset)}
-                        className="p-1.5 text-slate-600 hover:text-amber-600 hover:bg-amber-50 rounded-xl transition text-xs font-semibold flex items-center gap-1"
-                        title="Chỉnh sửa thông tin thiết bị"
-                      >
-                        <Pencil className="w-4 h-4 text-amber-600" />
-                        <span className="hidden sm:inline">Sửa</span>
-                      </button>
+                      {canEditAssets && (
+                        <button
+                          onClick={() => handleOpenEdit(asset)}
+                          className="p-1.5 text-slate-600 hover:text-amber-600 hover:bg-amber-50 rounded-xl transition text-xs font-semibold flex items-center gap-1"
+                          title="Chỉnh sửa thông tin thiết bị"
+                        >
+                          <Pencil className="w-4 h-4 text-amber-600" />
+                          <span className="hidden sm:inline">Sửa</span>
+                        </button>
+                      )}
 
                       {/* Xóa */}
-                      <button
-                        onClick={() => handleDeleteSingle(asset)}
-                        className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition text-xs font-semibold flex items-center gap-1"
-                        title="Xóa thiết bị này"
-                      >
-                        <Trash2 className="w-4 h-4 text-rose-600" />
-                        <span className="hidden sm:inline">Xóa</span>
-                      </button>
+                      {canDeleteAssets && (
+                        <button
+                          onClick={() => handleDeleteSingle(asset)}
+                          className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition text-xs font-semibold flex items-center gap-1"
+                          title="Xóa thiết bị này"
+                        >
+                          <Trash2 className="w-4 h-4 text-rose-600" />
+                          <span className="hidden sm:inline">Xóa</span>
+                        </button>
+                      )}
                     </div>
 
                     <div className="flex items-center gap-1">
@@ -429,16 +469,18 @@ export default function AssetsPage() {
                         <AlertTriangle className="w-4 h-4" />
                       </button>
 
-                      <button
-                        onClick={() => {
-                          setSelectedAssetForTransfer(asset);
-                          setIsTransferModalOpen(true);
-                        }}
-                        className="flex items-center gap-1 px-2.5 py-1.5 bg-orange-50 hover:bg-orange-600 hover:text-white text-orange-700 text-xs font-bold rounded-xl transition"
-                      >
-                        <ArrowRightLeft className="w-3.5 h-3.5" />
-                        <span>Bàn giao</span>
-                      </button>
+                      {canCreateTransfers && (
+                        <button
+                          onClick={() => {
+                            setSelectedAssetForTransfer(asset);
+                            setIsTransferModalOpen(true);
+                          }}
+                          className="flex items-center gap-1 px-2.5 py-1.5 bg-orange-50 hover:bg-orange-600 hover:text-white text-orange-700 text-xs font-bold rounded-xl transition"
+                        >
+                          <ArrowRightLeft className="w-3.5 h-3.5" />
+                          <span>Bàn giao</span>
+                        </button>
+                      )}
                     </div>
                   </div>
                 </div>

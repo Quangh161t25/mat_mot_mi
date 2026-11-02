@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
+import Link from 'next/link';
 import { useApp } from '@/context/AppContext';
 import { QRScannerModal } from '@/components/QRScannerModal';
 import { AssetStatus, AuditItem, AuditSession } from '@/types';
@@ -22,7 +23,8 @@ import {
   Square,
   User,
   MapPin,
-  Calendar
+  Calendar,
+  ShieldCheck
 } from 'lucide-react';
 
 export default function AuditPage() {
@@ -32,6 +34,10 @@ export default function AuditPage() {
     assets, 
     profiles, 
     currentUser, 
+    canViewAudit,
+    canCreateAudit,
+    canEditAudit,
+    canDeleteAudit,
     createAuditSession, 
     updateAuditSession,
     deleteAuditSession,
@@ -233,6 +239,26 @@ export default function AuditPage() {
     URL.revokeObjectURL(url);
   };
 
+  if (!canViewAudit) {
+    return (
+      <div className="py-20 text-center max-w-lg mx-auto bg-white border border-slate-200 rounded-3xl p-8 shadow-sm space-y-4">
+        <div className="w-14 h-14 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center mx-auto">
+          <ShieldCheck className="w-8 h-8" />
+        </div>
+        <h2 className="text-xl font-black text-slate-900">Không có quyền xem Kiểm Kê</h2>
+        <p className="text-sm text-slate-500 leading-relaxed">
+          Tài khoản của bạn chưa được cấp quyền Xem mô-đun Kiểm Kê Tài Sản. Vui lòng liên hệ Admin để được phân quyền.
+        </p>
+        <Link
+          href="/"
+          className="inline-flex items-center gap-2 px-5 py-2.5 bg-orange-600 hover:bg-orange-500 text-white rounded-xl text-xs font-bold shadow-md shadow-orange-600/20 transition"
+        >
+          <span>Về Bảng Điều Khiển</span>
+        </Link>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       {/* Top Banner */}
@@ -248,21 +274,25 @@ export default function AuditPage() {
         </div>
 
         <div className="flex items-center gap-2.5">
-          <button
-            onClick={() => setIsNewSessionModalOpen(true)}
-            className="flex items-center gap-2 px-3.5 py-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 rounded-xl text-xs sm:text-sm font-semibold transition shadow-sm"
-          >
-            <Plus className="w-4 h-4 text-orange-600" />
-            <span>Tạo Đợt Kiểm Kê</span>
-          </button>
+          {canCreateAudit && (
+            <button
+              onClick={() => setIsNewSessionModalOpen(true)}
+              className="flex items-center gap-2 px-3.5 py-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 rounded-xl text-xs sm:text-sm font-semibold transition shadow-sm"
+            >
+              <Plus className="w-4 h-4 text-orange-600" />
+              <span>Tạo Đợt Kiểm Kê</span>
+            </button>
+          )}
 
-          <button
-            onClick={() => setIsScannerOpen(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-orange-600 hover:bg-orange-500 text-white rounded-xl text-xs sm:text-sm font-bold shadow-md shadow-orange-600/25 transition active:scale-95"
-          >
-            <QrCode className="w-4 h-4" />
-            <span>Quét QR Kiểm Kê</span>
-          </button>
+          {canEditAudit && (
+            <button
+              onClick={() => setIsScannerOpen(true)}
+              className="flex items-center gap-2 px-4 py-2 bg-orange-600 hover:bg-orange-500 text-white rounded-xl text-xs sm:text-sm font-bold shadow-md shadow-orange-600/25 transition active:scale-95"
+            >
+              <QrCode className="w-4 h-4" />
+              <span>Quét QR Kiểm Kê</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -285,20 +315,24 @@ export default function AuditPage() {
               </div>
               <h2 className="text-lg sm:text-xl font-bold text-slate-900 flex items-center gap-2">
                 <span>{currentSession.title}</span>
-                <button
-                  onClick={() => handleOpenEditSession(currentSession)}
-                  className="p-1 text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition"
-                  title="Sửa tên đợt kiểm kê"
-                >
-                  <Pencil className="w-4 h-4" />
-                </button>
-                <button
-                  onClick={() => handleDeleteSession(currentSession)}
-                  className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition"
-                  title="Xóa đợt kiểm kê này"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </button>
+                {canEditAudit && (
+                  <button
+                    onClick={() => handleOpenEditSession(currentSession)}
+                    className="p-1 text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition"
+                    title="Sửa tên đợt kiểm kê"
+                  >
+                    <Pencil className="w-4 h-4" />
+                  </button>
+                )}
+                {canDeleteAudit && (
+                  <button
+                    onClick={() => handleDeleteSession(currentSession)}
+                    className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition"
+                    title="Xóa đợt kiểm kê này"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                )}
               </h2>
               <p className="text-xs text-slate-500 mt-0.5">
                 Khởi tạo bởi {currentSession.created_by_name} • Ngày {new Date(currentSession.created_at).toLocaleDateString('vi-VN')}
@@ -375,7 +409,7 @@ export default function AuditPage() {
             <h3 className="font-bold text-slate-900 text-sm sm:text-base">
               Chi Tiết Thiết Bị Đã Quét ({sessionItems.length})
             </h3>
-            {sessionItems.length > 0 && (
+            {canDeleteAudit && sessionItems.length > 0 && (
               <button
                 onClick={handleSelectAllItems}
                 className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold transition ml-2"
@@ -390,7 +424,7 @@ export default function AuditPage() {
             )}
           </div>
 
-          {selectedItemIds.length > 0 && (
+          {canDeleteAudit && selectedItemIds.length > 0 && (
             <button
               onClick={handleBatchDeleteItems}
               className="flex items-center gap-1.5 px-3 py-1.5 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-bold shadow-sm shadow-rose-600/30 transition active:scale-95"
@@ -417,16 +451,18 @@ export default function AuditPage() {
                   }`}
                 >
                   <div className="flex items-start gap-3 flex-1 min-w-0">
-                    <button
-                      onClick={() => handleToggleSelectItem(item.id)}
-                      className="mt-0.5 p-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 transition shrink-0"
-                    >
-                      {isSelected ? (
-                        <CheckSquare className="w-4 h-4 text-orange-600" />
-                      ) : (
-                        <Square className="w-4 h-4 text-slate-400" />
-                      )}
-                    </button>
+                    {canDeleteAudit && (
+                      <button
+                        onClick={() => handleToggleSelectItem(item.id)}
+                        className="mt-0.5 p-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 transition shrink-0"
+                      >
+                        {isSelected ? (
+                          <CheckSquare className="w-4 h-4 text-orange-600" />
+                        ) : (
+                          <Square className="w-4 h-4 text-slate-400" />
+                        )}
+                      </button>
+                    )}
 
                     <div className="space-y-1 flex-1 min-w-0">
                       <div className="flex items-center gap-2">
@@ -473,13 +509,15 @@ export default function AuditPage() {
                       <span className="hidden sm:inline">Chi tiết</span>
                     </button>
 
-                    <button
-                      onClick={() => handleDeleteSingleItem(item)}
-                      className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition"
-                      title="Xóa dòng kiểm kê này"
-                    >
-                      <Trash2 className="w-3.5 h-3.5 text-rose-600" />
-                    </button>
+                    {canDeleteAudit && (
+                      <button
+                        onClick={() => handleDeleteSingleItem(item)}
+                        className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition"
+                        title="Xóa dòng kiểm kê này"
+                      >
+                        <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                      </button>
+                    )}
                   </div>
                 </div>
               );

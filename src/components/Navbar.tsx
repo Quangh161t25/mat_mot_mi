@@ -19,7 +19,8 @@ import {
   History,
   KeyRound,
   LogOut,
-  LogIn
+  LogIn,
+  ShieldCheck
 } from 'lucide-react';
 import { QRScannerModal } from './QRScannerModal';
 import { InstallAppModal } from './InstallAppModal';
@@ -46,7 +47,14 @@ export const Navbar: React.FC = () => {
     syncWithGoogleSheets,
     requestPushPermission,
     sendTestNotification,
-    resetToDemoData 
+    resetToDemoData,
+    isAdmin,
+    isManager,
+    canViewAssets,
+    canViewTransfers,
+    canViewAudit,
+    canViewStaff,
+    canViewLogs
   } = useApp();
 
   const [isScannerOpen, setIsScannerOpen] = useState(false);
@@ -57,18 +65,20 @@ export const Navbar: React.FC = () => {
   const [isChangePasswordModalOpen, setIsChangePasswordModalOpen] = useState(false);
 
   const navLinks = [
-    { href: '/', label: 'Dashboard', icon: LayoutDashboard },
-    { href: '/assets', label: 'Thiết Bị', icon: Boxes },
+    { href: '/', label: 'Dashboard', icon: LayoutDashboard, visible: true },
+    { href: '/assets', label: 'Thiết Bị', icon: Boxes, visible: canViewAssets },
     { 
       href: '/transfers', 
       label: 'Mượn – Trả', 
       icon: ArrowRightLeft,
-      badge: pendingTransfersCount > 0 ? pendingTransfersCount : null 
+      badge: pendingTransfersCount > 0 ? pendingTransfersCount : null,
+      visible: canViewTransfers
     },
-    { href: '/audit', label: 'Kiểm Kê', icon: ClipboardCheck },
-    { href: '/staff', label: 'Nhân Sự', icon: Users },
-    { href: '/logs', label: 'Nhật Ký', icon: History },
-  ];
+    { href: '/audit', label: 'Kiểm Kê', icon: ClipboardCheck, visible: canViewAudit },
+    { href: '/staff', label: 'Nhân Sự', icon: Users, visible: canViewStaff },
+    { href: '/permissions', label: 'Phân Quyền', icon: ShieldCheck, visible: isAdmin || isManager },
+    { href: '/logs', label: 'Nhật Ký', icon: History, visible: canViewLogs },
+  ].filter(link => link.visible);
 
   const handleScanSuccess = (code: string) => {
     setIsScannerOpen(false);

@@ -13,7 +13,10 @@ import {
   AppNotification,
   ActivityLog,
   LogAction,
-  LogModule
+  LogModule,
+  UserPermissions,
+  getUserPermissions,
+  DEFAULT_PERMISSIONS_BY_ROLE
 } from '@/types';
 import { 
   INITIAL_PROFILES, 
@@ -56,12 +59,31 @@ interface AppContextType {
   isSyncing: boolean;
   syncWithGoogleSheets: () => Promise<void>;
   
-  // Permissions
+  // Permissions & Access Control (Xem / Thêm / Sửa / Xóa)
   isAdmin: boolean;
   isManager: boolean;
   isStaff: boolean;
   canManageEquipment: boolean;
   canManageUsers: boolean;
+  userPermissions: UserPermissions;
+  updateUserPermissions: (userId: string, permissions: UserPermissions) => void;
+  canViewAssets: boolean;
+  canCreateAssets: boolean;
+  canEditAssets: boolean;
+  canDeleteAssets: boolean;
+  canViewTransfers: boolean;
+  canCreateTransfers: boolean;
+  canEditTransfers: boolean;
+  canDeleteTransfers: boolean;
+  canViewStaff: boolean;
+  canCreateStaff: boolean;
+  canEditStaff: boolean;
+  canDeleteStaff: boolean;
+  canViewAudit: boolean;
+  canCreateAudit: boolean;
+  canEditAudit: boolean;
+  canDeleteAudit: boolean;
+  canViewLogs: boolean;
   
   // Staff / User Management
   addProfile: (profile: Omit<UserProfile, 'id' | 'created_at'>) => void;
@@ -468,6 +490,30 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const canManageEquipment = isAdmin || isManager;
   const canManageUsers = isAdmin;
 
+  // Granular Permissions check (Xem / Thêm / Sửa / Xóa)
+  const userPermissions = getUserPermissions(currentUser);
+  const canViewAssets = userPermissions.assets.view;
+  const canCreateAssets = userPermissions.assets.create;
+  const canEditAssets = userPermissions.assets.edit;
+  const canDeleteAssets = userPermissions.assets.delete;
+
+  const canViewTransfers = userPermissions.transfers.view;
+  const canCreateTransfers = userPermissions.transfers.create;
+  const canEditTransfers = userPermissions.transfers.edit;
+  const canDeleteTransfers = userPermissions.transfers.delete;
+
+  const canViewStaff = userPermissions.staff.view;
+  const canCreateStaff = userPermissions.staff.create;
+  const canEditStaff = userPermissions.staff.edit;
+  const canDeleteStaff = userPermissions.staff.delete;
+
+  const canViewAudit = userPermissions.audit.view;
+  const canCreateAudit = userPermissions.audit.create;
+  const canEditAudit = userPermissions.audit.edit;
+  const canDeleteAudit = userPermissions.audit.delete;
+
+  const canViewLogs = userPermissions.logs.view;
+
   // Helper ghi nhật ký hoạt động
   const addLog = useCallback((action: LogAction, module: LogModule, summary: string, details?: string) => {
     const user = currentUserRef.current;
@@ -613,6 +659,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     dispatchToSheets('update_staff', { id, updates: { status: nextStatus } });
     addLog('update', 'Nhân sự', `${nextStatus === 'locked' ? 'Khóa' : 'Mở khóa'} tài khoản: ${target.full_name}`);
   };
+
+  const updateUserPermissions = useCallback((userId: string, permissions: UserPermissions) => {
+    const target = profiles.find(p => p.id === userId);
+    setProfiles(prev => prev.map(p => p.id === userId ? { ...p, permissions } : p));
+    if (currentUser.id === userId) {
+      setCurrentUser(prev => ({ ...prev, permissions }));
+    }
+    dispatchToSheets('update_permissions', { userId, permissions });
+    addLog('permissions_update', 'Phân quyền', `Cập nhật quyền hạn cho nhân sự: ${target?.full_name || userId}`);
+  }, [profiles, currentUser.id, dispatchToSheets, addLog]);
 
   // 2. Quản lý tài sản
   const addAsset = (newAsset: Omit<Asset, 'id' | 'created_at' | 'updated_at'>) => {
@@ -1222,6 +1278,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         isStaff,
         canManageEquipment,
         canManageUsers,
+        userPermissions,
+        updateUserPermissions,
+        canViewAssets,
+        canCreateAssets,
+        canEditAssets,
+        canDeleteAssets,
+        canViewTransfers,
+        canCreateTransfers,
+        canEditTransfers,
+        canDeleteTransfers,
+        canViewStaff,
+        canCreateStaff,
+        canEditStaff,
+        canDeleteStaff,
+        canViewAudit,
+        canCreateAudit,
+        canEditAudit,
+        canDeleteAudit,
+        canViewLogs,
         
         addProfile,
         updateProfile,

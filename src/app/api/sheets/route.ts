@@ -18,6 +18,7 @@ import {
   deleteAuditItemInSheet,
   deleteAuditSessionInSheet,
   appendLogToSheet,
+  updateStaffPermissionsInSheet,
   SPREADSHEET_ID, 
   getSheetsClient,
   getGoogleAuthDiagnostics
@@ -158,6 +159,10 @@ export async function POST(req: Request) {
 
       case 'batch_delete_staff':
         await batchDeleteStaffInSheet(payload.ids);
+        return NextResponse.json({ success: true }, { headers: corsAndNoCacheHeaders });
+
+      case 'update_permissions':
+        await updateStaffPermissionsInSheet(payload.userId, payload.permissions);
         return NextResponse.json({ success: true }, { headers: corsAndNoCacheHeaders });
 
       // 3. Mượn trả

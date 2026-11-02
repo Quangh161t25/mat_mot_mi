@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
+import Link from 'next/link';
 import { useApp } from '@/context/AppContext';
 import { ActivityLog, LogModule, LogAction } from '@/types';
 import { 
@@ -32,7 +33,7 @@ const MODULES: { id: LogModule | 'all'; label: string }[] = [
 ];
 
 export default function LogsPage() {
-  const { logs, syncWithGoogleSheets, isSyncing } = useApp();
+  const { logs, syncWithGoogleSheets, isSyncing, canViewLogs } = useApp();
 
   const [search, setSearch] = useState('');
   const [selectedModule, setSelectedModule] = useState<string>('all');
@@ -88,6 +89,26 @@ export default function LogsPage() {
         return <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-50 text-slate-700 border border-slate-200">{action}</span>;
     }
   };
+
+  if (!canViewLogs) {
+    return (
+      <div className="py-20 text-center max-w-lg mx-auto bg-white border border-slate-200 rounded-3xl p-8 shadow-sm space-y-4">
+        <div className="w-14 h-14 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center mx-auto">
+          <ShieldCheck className="w-8 h-8" />
+        </div>
+        <h2 className="text-xl font-black text-slate-900">Không có quyền xem Nhật Ký</h2>
+        <p className="text-sm text-slate-500 leading-relaxed">
+          Tài khoản của bạn chưa được cấp quyền Xem mô-đun Nhật Ký Hoạt Động (Audit Trail). Vui lòng liên hệ Admin để được phân quyền.
+        </p>
+        <Link
+          href="/"
+          className="inline-flex items-center gap-2 px-5 py-2.5 bg-orange-600 hover:bg-orange-500 text-white rounded-xl text-xs font-bold shadow-md shadow-orange-600/20 transition"
+        >
+          <span>Về Bảng Điều Khiển</span>
+        </Link>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">

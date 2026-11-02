@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
+import Link from 'next/link';
 import { useApp } from '@/context/AppContext';
 import { UserProfile, UserRole } from '@/types';
 import { 
@@ -31,6 +32,10 @@ export default function StaffPage() {
     assets, 
     transfers, 
     canManageUsers, 
+    canViewStaff,
+    canCreateStaff,
+    canEditStaff,
+    canDeleteStaff,
     addProfile, 
     updateProfile, 
     deleteProfile,
@@ -164,6 +169,26 @@ export default function StaffPage() {
     }
   };
 
+  if (!canViewStaff) {
+    return (
+      <div className="py-20 text-center max-w-lg mx-auto bg-white border border-slate-200 rounded-3xl p-8 shadow-sm space-y-4">
+        <div className="w-14 h-14 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center mx-auto">
+          <ShieldCheck className="w-8 h-8" />
+        </div>
+        <h2 className="text-xl font-black text-slate-900">Không có quyền xem Nhân Sự</h2>
+        <p className="text-sm text-slate-500 leading-relaxed">
+          Tài khoản của bạn chưa được cấp quyền Xem mô-đun Quản Lý Nhân Sự. Vui lòng liên hệ Admin để được phân quyền.
+        </p>
+        <Link
+          href="/"
+          className="inline-flex items-center gap-2 px-5 py-2.5 bg-orange-600 hover:bg-orange-500 text-white rounded-xl text-xs font-bold shadow-md shadow-orange-600/20 transition"
+        >
+          <span>Về Bảng Điều Khiển</span>
+        </Link>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       {/* Top Banner */}
@@ -178,7 +203,7 @@ export default function StaffPage() {
           </p>
         </div>
 
-        {canManageUsers && (
+        {canCreateStaff && (
           <button
             onClick={() => setIsAddModalOpen(true)}
             className="flex items-center gap-2 px-4 py-2.5 bg-orange-600 hover:bg-orange-500 text-white rounded-xl text-xs sm:text-sm font-bold shadow-md shadow-orange-600/25 transition active:scale-95"
@@ -230,7 +255,7 @@ export default function StaffPage() {
         </div>
 
         {/* Multi-select Batch Actions Bar */}
-        {canManageUsers && (
+        {canDeleteStaff && (
           <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-slate-100 text-xs">
             <div className="flex items-center gap-2">
               <button
@@ -289,7 +314,7 @@ export default function StaffPage() {
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex items-center gap-3">
                     {/* Checkbox for batch select */}
-                    {canManageUsers && !isMe ? (
+                    {canDeleteStaff && !isMe ? (
                       <button
                         onClick={() => handleToggleSelect(person.id)}
                         className="p-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 transition"
@@ -395,7 +420,7 @@ export default function StaffPage() {
                     <span>Chi tiết</span>
                   </button>
 
-                  {canManageUsers && (
+                  {canEditStaff && (
                     <button
                       onClick={() => handleOpenEdit(person)}
                       className="p-1.5 text-slate-600 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition flex items-center gap-1 font-semibold"
@@ -407,27 +432,31 @@ export default function StaffPage() {
                   )}
                 </div>
 
-                {canManageUsers && !isMe && (
+                {!isMe && (canEditStaff || canDeleteStaff) && (
                   <div className="flex items-center gap-1">
-                    <button
-                      onClick={() => toggleProfileLock(person.id)}
-                      className={`p-1.5 rounded-lg transition text-xs font-bold flex items-center gap-1 ${
-                        isLocked
-                          ? 'text-emerald-700 hover:bg-emerald-50'
-                          : 'text-slate-500 hover:text-slate-800 hover:bg-slate-100'
-                      }`}
-                      title={isLocked ? 'Mở khóa tài khoản' : 'Khóa tài khoản'}
-                    >
-                      {isLocked ? <Unlock className="w-3.5 h-3.5" /> : <Lock className="w-3.5 h-3.5" />}
-                    </button>
+                    {canEditStaff && (
+                      <button
+                        onClick={() => toggleProfileLock(person.id)}
+                        className={`p-1.5 rounded-lg transition text-xs font-bold flex items-center gap-1 ${
+                          isLocked
+                            ? 'text-emerald-700 hover:bg-emerald-50'
+                            : 'text-slate-500 hover:text-slate-800 hover:bg-slate-100'
+                        }`}
+                        title={isLocked ? 'Mở khóa tài khoản' : 'Khóa tài khoản'}
+                      >
+                        {isLocked ? <Unlock className="w-3.5 h-3.5" /> : <Lock className="w-3.5 h-3.5" />}
+                      </button>
+                    )}
 
-                    <button
-                      onClick={() => handleDeleteSingle(person)}
-                      className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition"
-                      title="Xóa nhân sự này"
-                    >
-                      <Trash2 className="w-3.5 h-3.5 text-rose-600" />
-                    </button>
+                    {canDeleteStaff && (
+                      <button
+                        onClick={() => handleDeleteSingle(person)}
+                        className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition"
+                        title="Xóa nhân sự này"
+                      >
+                        <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                      </button>
+                    )}
                   </div>
                 )}
               </div>

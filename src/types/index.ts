@@ -1,6 +1,53 @@
 export type UserRole = 'admin' | 'manager' | 'staff';
 export type UserStatus = 'active' | 'locked';
 
+export interface CrudPermissions {
+  view: boolean;   // Quyền Xem
+  create: boolean; // Quyền Thêm
+  edit: boolean;   // Quyền Sửa
+  delete: boolean; // Quyền Xóa
+}
+
+export interface UserPermissions {
+  assets: CrudPermissions;     // Thiết bị: xem, thêm, sửa, xóa
+  transfers: CrudPermissions;  // Mượn - Trả: xem, thêm, sửa, xóa
+  staff: CrudPermissions;      // Nhân sự: xem, thêm, sửa, xóa
+  audit: CrudPermissions;      // Kiểm kê: xem, thêm, sửa, xóa
+  logs: { view: boolean };     // Nhật ký: xem
+}
+
+export const DEFAULT_PERMISSIONS_BY_ROLE: Record<UserRole, UserPermissions> = {
+  admin: {
+    assets: { view: true, create: true, edit: true, delete: true },
+    transfers: { view: true, create: true, edit: true, delete: true },
+    staff: { view: true, create: true, edit: true, delete: true },
+    audit: { view: true, create: true, edit: true, delete: true },
+    logs: { view: true },
+  },
+  manager: {
+    assets: { view: true, create: true, edit: true, delete: true },
+    transfers: { view: true, create: true, edit: true, delete: false },
+    staff: { view: true, create: false, edit: false, delete: false },
+    audit: { view: true, create: true, edit: true, delete: false },
+    logs: { view: true },
+  },
+  staff: {
+    assets: { view: true, create: false, edit: false, delete: false },
+    transfers: { view: true, create: true, edit: false, delete: false },
+    staff: { view: false, create: false, edit: false, delete: false },
+    audit: { view: true, create: false, edit: true, delete: false },
+    logs: { view: false },
+  },
+};
+
+export function getUserPermissions(user?: UserProfile | null): UserPermissions {
+  if (!user) return DEFAULT_PERMISSIONS_BY_ROLE.staff;
+  if (user.role === 'admin') {
+    return user.permissions || DEFAULT_PERMISSIONS_BY_ROLE.admin;
+  }
+  return user.permissions || DEFAULT_PERMISSIONS_BY_ROLE[user.role] || DEFAULT_PERMISSIONS_BY_ROLE.staff;
+}
+
 export interface UserProfile {
   id: string;
   email: string;
@@ -9,6 +56,7 @@ export interface UserProfile {
   role: UserRole;
   status: UserStatus;
   password?: string;
+  permissions?: UserPermissions;
   avatar_url?: string;
   created_at: string;
 }
@@ -147,9 +195,10 @@ export type LogAction =
   | 'audit_session_create'
   | 'login' 
   | 'logout'
-  | 'password_change';
+  | 'password_change'
+  | 'permissions_update';
 
-export type LogModule = 'Thiết bị' | 'Mượn – Trả' | 'Nhân sự' | 'Kiểm kê' | 'Hệ thống';
+export type LogModule = 'Thiết bị' | 'Mượn – Trả' | 'Nhân sự' | 'Kiểm kê' | 'Hệ thống' | 'Phân quyền';
 
 export interface ActivityLog {
   id: string;
