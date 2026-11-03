@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { useApp } from '@/context/AppContext';
-import { Camera, Lock, Eye, EyeOff, LogIn, ShieldAlert, Sparkles, UserCheck } from 'lucide-react';
+import { Camera, Lock, Eye, EyeOff, LogIn, ShieldAlert } from 'lucide-react';
 
 interface LoginModalProps {
   isOpen: boolean;
@@ -11,7 +11,7 @@ interface LoginModalProps {
 }
 
 export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose, canDismiss = false }) => {
-  const { login, profiles } = useApp();
+  const { login } = useApp();
 
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
@@ -21,30 +21,19 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose, canDism
 
   if (!isOpen) return null;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     setIsSubmitting(true);
 
-    const res = login(identifier, password);
+    const res = await login(identifier, password);
     setIsSubmitting(false);
 
     if (res.success) {
+      setPassword('');
       if (onClose) onClose();
     } else {
       setError(res.error || 'Đăng nhập không thành công');
-    }
-  };
-
-  const handleQuickLogin = (pIdentifier: string, pPass: string) => {
-    setError(null);
-    setIdentifier(pIdentifier);
-    setPassword(pPass);
-    const res = login(pIdentifier, pPass);
-    if (res.success && onClose) {
-      onClose();
-    } else if (!res.success) {
-      setError(res.error || 'Lỗi đăng nhập nhanh');
     }
   };
 
@@ -130,41 +119,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose, canDism
             </button>
           </form>
 
-          {/* Quick Demo Login Pills */}
-          <div className="pt-4 border-t border-slate-100">
-            <div className="flex items-center gap-1.5 mb-2.5 text-xs font-bold text-slate-500">
-              <Sparkles className="w-3.5 h-3.5 text-orange-600" />
-              <span>Đăng nhập nhanh 1-Click để test phân quyền:</span>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-              <button
-                type="button"
-                onClick={() => handleQuickLogin('Nguyễn Hùng (Admin)', 'admin')}
-                className="p-2 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-xl text-left transition text-xs group"
-              >
-                <div className="font-bold text-rose-900 truncate">Hùng (Admin)</div>
-                <div className="text-[10px] text-rose-600">Pass: admin</div>
-              </button>
 
-              <button
-                type="button"
-                onClick={() => handleQuickLogin('Minh', '123456')}
-                className="p-2 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-xl text-left transition text-xs group"
-              >
-                <div className="font-bold text-blue-900 truncate">Minh (Nhân sự)</div>
-                <div className="text-[10px] text-blue-600">Pass: 123456</div>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => handleQuickLogin('Duy', '123456')}
-                className="p-2 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-xl text-left transition text-xs group"
-              >
-                <div className="font-bold text-emerald-900 truncate">Duy (Nhân sự)</div>
-                <div className="text-[10px] text-emerald-600">Pass: 123456</div>
-              </button>
-            </div>
-          </div>
         </div>
       </div>
     </div>

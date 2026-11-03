@@ -1,5 +1,6 @@
 'use client';
 
+import { attendanceError } from '@/lib/attendance';
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { 
   UserProfile, 
@@ -41,9 +42,9 @@ interface AppContextType {
   currentUser: UserProfile;
   setCurrentUser: (user: UserProfile) => void;
   isAuthenticated: boolean;
-  login: (identifier: string, password: string) => { success: boolean; error?: string };
-  logout: () => void;
-  changePassword: (newPassword: string) => { success: boolean; error?: string };
+  login: (identifier: string, password: string) => Promise<{ success: boolean; error?: string }>;
+  logout: () => Promise<void>;
+  changePassword: (newPassword: string) => Promise<{ success: boolean; error?: string }>;
 
   profiles: UserProfile[];
   assets: Asset[];
@@ -147,7 +148,7 @@ interface AppContextType {
     accuracy?: number | null;
     photoUrl?: string;
     notes?: string;
-  }) => { success: boolean; record?: AttendanceRecord; error?: string };
+  }) => Promise<{ success: boolean; record?: AttendanceRecord; error?: string }>;
   deleteAttendance: (id: string) => void;
   
   updateTransfer: (id: string, updates: Partial<TransferRecord>) => void;
@@ -212,7 +213,7 @@ const STORAGE_KEYS = {
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [profiles, setProfiles] = useState<UserProfile[]>(INITIAL_PROFILES);
   const [currentUser, setCurrentUser] = useState<UserProfile>(INITIAL_PROFILES[0]);
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(true);
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
   const [assets, setAssets] = useState<Asset[]>(INITIAL_ASSETS);
   const [transfers, setTransfers] = useState<TransferRecord[]>(INITIAL_TRANSFERS);
   const [auditSessions, setAuditSessions] = useState<AuditSession[]>(INITIAL_AUDIT_SESSIONS);
@@ -226,6 +227,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [googleSheetsError, setGoogleSheetsError] = useState<string | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
   const [isLoaded, setIsLoaded] = useState(false);
+
+  const authenticatedUserIdRef = React.useRef<string | null>(null);
 
   // Bộ nhớ theo dõi giao dịch đã báo chuông để tránh lặp lại
   const notifiedTransferKeysRef = React.useRef<Set<string>>(new Set());
@@ -246,6 +249,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // 1. Sync from Google Sheets (Bỏ hoàn toàn cache để đảm bảo Google Sheets là nguồn dữ liệu chuẩn duy nhất)
   const syncWithGoogleSheets = useCallback(async (fresh = true) => {
+    const authId = authenticatedUserIdRef.current;
+    if (!authId) return;
     setIsSyncing(true);
     try {
       const res = await fetch(`/api/sheets?t=${Date.now()}${fresh ? '&fresh=1' : ''}`, {
@@ -256,12 +261,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }
       });
       
+      if (authenticatedUserIdRef.current !== authId) return;
+      if (res.status === 401) {
+        authenticatedUserIdRef.current = null;
+        setIsAuthenticated(false);
+        setProfiles([]); setAssets([]); setTransfers([]); setLogs([]); setAttendance([]);
+        setAuditItems([]); setAuditSessions([]); setCombos([]); setNotifications([]);
+        Object.values(STORAGE_KEYS).forEach(key => localStorage.removeItem(key));
+        return;
+      }
       const contentType = res.headers.get('content-type') || '';
       if (!contentType.includes('application/json')) {
         console.warn('API phản hồi không phải JSON hợp lệ:', res.status);
-        setGoogleSheetsStatus('connected');
-        setGoogleSheetsError(null);
-        return;
+        throw new Error('Máy chủ trả về dữ liệu không hợp lệ.');
       }
 
       const json = await res.json();
@@ -278,6 +290,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           // 2. Đồng bộ Nhân sự
           if (Array.isArray(json.data.profiles) && json.data.profiles.length > 0) {
             setProfiles(json.data.profiles);
+            const refreshedUser = json.data.profiles.find((p: UserProfile) => p.id === authId);
+            if (refreshedUser) { currentUserRef.current = refreshedUser; setCurrentUser(refreshedUser); }
             try {
               localStorage.setItem(STORAGE_KEYS.PROFILES, JSON.stringify(json.data.profiles));
             } catch (e) {}
@@ -399,14 +413,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setGoogleSheetsError(null);
       } else {
         syncFailuresRef.current += 1;
-        setGoogleSheetsStatus('connected');
-        setGoogleSheetsError(null);
+        setGoogleSheetsStatus('error');
+        setGoogleSheetsError(json.error || 'Không thể đồng bộ Google Sheets.');
       }
     } catch (err: any) {
       console.warn('Lỗi đồng bộ Google Sheets:', err);
       syncFailuresRef.current += 1;
-      setGoogleSheetsStatus('connected');
-      setGoogleSheetsError(null);
+      setGoogleSheetsStatus('error');
+      setGoogleSheetsError(err.message || 'Không thể kết nối Google Sheets.');
     } finally {
       setIsSyncing(false);
     }
@@ -430,6 +444,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         console.warn(`Lỗi ghi '${action}' sang Google Sheets:`, data.error);
         setGoogleSheetsStatus('error');
         setGoogleSheetsError(data.error || 'Lỗi ghi dữ liệu Google Sheets');
+        await syncWithGoogleSheets(true);
       } else {
         setGoogleSheetsStatus('connected');
         setGoogleSheetsError(null);
@@ -443,52 +458,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   }, [syncWithGoogleSheets]);
 
-  // Load from localStorage on mount & Register Service Worker & Sync Google Sheets
+  // Restore the server session, then load authorized data.
   useEffect(() => {
-    try {
-      const storedProfiles = localStorage.getItem(STORAGE_KEYS.PROFILES);
-      const storedAssets = localStorage.getItem(STORAGE_KEYS.ASSETS);
-      const storedTransfers = localStorage.getItem(STORAGE_KEYS.TRANSFERS);
-      const storedSessions = localStorage.getItem(STORAGE_KEYS.AUDIT_SESSIONS);
-      const storedItems = localStorage.getItem(STORAGE_KEYS.AUDIT_ITEMS);
-      const storedNotifications = localStorage.getItem(STORAGE_KEYS.NOTIFICATIONS);
-      const storedUser = localStorage.getItem(STORAGE_KEYS.CURRENT_USER);
-      const storedLogs = localStorage.getItem(STORAGE_KEYS.LOGS);
-      const storedCombos = localStorage.getItem(STORAGE_KEYS.COMBOS);
-      const storedAttendance = localStorage.getItem(STORAGE_KEYS.ATTENDANCE);
-      const storedAuthUserId = localStorage.getItem(STORAGE_KEYS.AUTH_USER_ID);
-
-      if (storedProfiles) setProfiles(JSON.parse(storedProfiles));
-      if (storedAssets) setAssets(JSON.parse(storedAssets));
-      if (storedTransfers) setTransfers(JSON.parse(storedTransfers));
-      if (storedSessions) setAuditSessions(JSON.parse(storedSessions));
-      if (storedItems) setAuditItems(JSON.parse(storedItems));
-      if (storedNotifications) setNotifications(JSON.parse(storedNotifications));
-      if (storedLogs) setLogs(JSON.parse(storedLogs));
-      if (storedCombos) setCombos(JSON.parse(storedCombos));
-      if (storedAttendance) setAttendance(JSON.parse(storedAttendance));
-      
-      if (storedUser) {
-        const parsed = JSON.parse(storedUser);
-        const exists = (storedProfiles ? JSON.parse(storedProfiles) : INITIAL_PROFILES)
-          .find((p: UserProfile) => p.id === parsed.id);
-        if (exists) setCurrentUser(exists);
-      }
-
-      if (storedAuthUserId) {
-        setIsAuthenticated(true);
-      }
-    } catch (err) {
-      console.error('Lỗi đọc local storage:', err);
-    } finally {
-      setIsLoaded(true);
-    }
-
-    // Register Service Worker for PWA & Mobile Push
+    // Legacy browser credentials cannot establish identity.
+    try { Object.values(STORAGE_KEYS).forEach(key => localStorage.removeItem(key)); } catch { /* Storage may be disabled. */ }
     registerServiceWorker();
-
-    // Đồng bộ ngay lập tức từ Google Sheets khi mở app (fresh = true để không bị giữ cache)
-    syncWithGoogleSheets(true);
+    fetch('/api/auth', { cache: 'no-store' }).then(async res => {
+      const result = await res.json();
+      if (res.ok && result.success) {
+        authenticatedUserIdRef.current = result.user.id;
+        currentUserRef.current = result.user;
+        setCurrentUser(result.user);
+        setIsAuthenticated(true);
+        await syncWithGoogleSheets(true);
+      }
+    }).catch(() => setGoogleSheetsError('Không thể kiểm tra phiên đăng nhập.'))
+      .finally(() => setIsLoaded(true));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -602,65 +587,48 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [dispatchToSheets, logs]);
 
   // Auth: Login, Logout, Change Password
-  const login = useCallback((identifier: string, password: string) => {
-    const cleanId = identifier.trim().toLowerCase();
-    const cleanPass = password.trim();
-
-    const targetUser = profiles.find(p => 
-      p.email?.toLowerCase() === cleanId ||
-      p.phone?.replace(/\s+/g, '') === cleanId.replace(/\s+/g, '') ||
-      p.full_name?.toLowerCase() === cleanId
-    );
-
-    if (!targetUser) {
-      return { success: false, error: 'Không tìm thấy tài khoản nhân viên phù hợp!' };
-    }
-
-    if (targetUser.status === 'locked') {
-      return { success: false, error: 'Tài khoản này đã bị khóa (nhân sự nghỉ việc)!' };
-    }
-
-    const expectedPass = targetUser.password || (targetUser.role === 'admin' ? 'admin' : '123456');
-    if (cleanPass !== expectedPass) {
-      return { success: false, error: 'Mật khẩu không chính xác! Vui lòng thử lại.' };
-    }
-
-    setCurrentUser(targetUser);
-    setIsAuthenticated(true);
+  const login = useCallback(async (identifier: string, password: string) => {
     try {
-      localStorage.setItem(STORAGE_KEYS.AUTH_USER_ID, targetUser.id);
-      localStorage.setItem(STORAGE_KEYS.CURRENT_USER, JSON.stringify(targetUser));
-    } catch (e) {}
+      const res = await fetch('/api/auth', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ identifier, password }),
+      });
+      const result = await res.json();
+      if (!res.ok || !result.success) return { success: false, error: result.error || 'Đăng nhập thất bại.' };
+      authenticatedUserIdRef.current = result.user.id;
+      currentUserRef.current = result.user;
+      setCurrentUser(result.user);
+      setIsAuthenticated(true);
+      isFirstSyncRef.current = true;
+      notifiedTransferKeysRef.current.clear();
+      await syncWithGoogleSheets(true);
+      return { success: true };
+    } catch { return { success: false, error: 'Không thể kết nối máy chủ.' }; }
+  }, [syncWithGoogleSheets]);
 
-    addLog('login', 'Hệ thống', `${targetUser.full_name} (${targetUser.role}) đăng nhập thành công`);
-    return { success: true };
-  }, [profiles, addLog]);
-
-  const logout = useCallback(() => {
-    const user = currentUserRef.current;
-    if (user) {
-      addLog('logout', 'Hệ thống', `${user.full_name} đăng xuất khỏi hệ thống`);
-    }
-    setIsAuthenticated(false);
+  const logout = useCallback(async () => {
     try {
-      localStorage.removeItem(STORAGE_KEYS.AUTH_USER_ID);
-    } catch (e) {}
-  }, [addLog]);
+      const response = await fetch('/api/auth', { method: 'DELETE' });
+      if (!response.ok) throw new Error('Không thể đăng xuất.');
+      authenticatedUserIdRef.current = null;
+      setIsAuthenticated(false);
+      setCurrentUser(INITIAL_PROFILES[0]);
+      setProfiles([]); setAssets([]); setTransfers([]); setLogs([]); setAttendance([]);
+      setAuditItems([]); setAuditSessions([]); setCombos([]); setNotifications([]);
+      Object.values(STORAGE_KEYS).forEach(key => localStorage.removeItem(key));
+    } catch { setGoogleSheetsError('Không thể đăng xuất. Vui lòng thử lại.'); }
+  }, []);
 
-  const changePassword = useCallback((newPassword: string) => {
-    if (!newPassword || newPassword.trim().length < 4) {
-      return { success: false, error: 'Mật khẩu mới phải có ít nhất 4 ký tự!' };
-    }
-    const cleanPass = newPassword.trim();
-    const user = currentUserRef.current;
-    if (!user) return { success: false, error: 'Chưa đăng nhập' };
-
-    setProfiles(prev => prev.map(p => p.id === user.id ? { ...p, password: cleanPass } : p));
-    setCurrentUser(prev => ({ ...prev, password: cleanPass }));
-    dispatchToSheets('update_staff', { id: user.id, updates: { password: cleanPass } });
-    addLog('password_change', 'Hệ thống', `${user.full_name} đổi mật khẩu thành công`);
-    return { success: true };
-  }, [dispatchToSheets, addLog]);
+  const changePassword = useCallback(async (newPassword: string) => {
+    try {
+      const res = await fetch('/api/auth', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'change_password', password: newPassword }),
+      });
+      const result = await res.json();
+      return { success: res.ok && result.success, error: result.error };
+    } catch { return { success: false, error: 'Không thể đổi mật khẩu. Vui lòng thử lại.' }; }
+  }, []);
 
   // 1. Quản lý nhân sự
   const addProfile = (newProfile: Omit<UserProfile, 'id' | 'created_at'>) => {
@@ -670,7 +638,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       created_at: new Date().toISOString(),
       password: newProfile.password || (newProfile.role === 'admin' ? 'admin' : '123456'),
     };
-    setProfiles(prev => [profile, ...prev]);
+    const { password: _password, ...safeProfile } = profile;
+    setProfiles(prev => [safeProfile, ...prev]);
 
     // Ghi sang Google Sheets
     dispatchToSheets('append_staff', { profile });
@@ -679,14 +648,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const updateProfile = (id: string, updates: Partial<UserProfile>) => {
     const target = profiles.find(p => p.id === id);
-    setProfiles(prev => prev.map(p => p.id === id ? { ...p, ...updates } : p));
+    const { password: _password, ...safeUpdates } = updates;
+    setProfiles(prev => prev.map(p => p.id === id ? { ...p, ...safeUpdates } : p));
     if (currentUser.id === id) {
-      setCurrentUser(prev => ({ ...prev, ...updates }));
+      setCurrentUser(prev => ({ ...prev, ...safeUpdates }));
     }
 
     // Ghi sang Google Sheets
     dispatchToSheets('update_staff', { id, updates });
-    addLog('update', 'Nhân sự', `Cập nhật thông tin nhân sự: ${target?.full_name || id}`, JSON.stringify(updates));
+    addLog('update', 'Nhân sự', `Cập nhật thông tin nhân sự: ${target?.full_name || id}`, JSON.stringify(safeUpdates));
   };
 
   const deleteProfile = (id: string): { success: boolean; error?: string } => {
@@ -758,7 +728,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     addLog('create', 'Thiết bị', `Thêm thiết bị mới: ${asset.name} (${asset.code})`);
   };
 
-  const updateAsset = (id: string, updates: Partial<Asset>) => {
+  const updateAsset = useCallback((id: string, updates: Partial<Asset>, persist = true) => {
     const targetAsset = assets.find(a => a.id === id);
     if (!targetAsset) return;
 
@@ -779,9 +749,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }));
 
     // Ghi sang Google Sheets
+    if (!persist) return;
     dispatchToSheets('update_asset', { code: targetAsset.code, updates });
     addLog('update', 'Thiết bị', `Cập nhật thiết bị ${targetAsset.code} - ${targetAsset.name}`, JSON.stringify(updates));
-  };
+  }, [assets, profiles, dispatchToSheets, addLog]);
 
   const deleteAsset = (id: string) => {
     const targetAsset = assets.find(a => a.id === id);
@@ -904,7 +875,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     updateAsset(asset.id, {
       status: 'pending_transfer',
       location: data.locationAfter || asset.location,
-    });
+    }, false);
 
     // 🔔 TẠO THÔNG BÁO VÀ BẮN TỚI ĐIỆN THOẠI NGƯỜI NHẬN
     const notifTitle = `🔔 Yêu cầu nhận thiết bị mới`;
@@ -1053,7 +1024,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       updateAsset(asset.id, {
         status: 'pending_transfer',
         location: data.locationAfter || asset.location,
-      });
+      }, false);
     }
 
     setTransfers(prev => [...createdTransfers, ...prev]);
@@ -1117,7 +1088,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (!tr || tr.status !== 'pending') continue;
 
       const isRecipient = currentUser.id === tr.to_user_id;
-      if (!isRecipient && !canManageEquipment) continue;
+      if (currentUser.id === tr.from_user_id || (!isRecipient && !(currentUser.role !== 'staff' && canEditTransfers))) continue;
 
       confirmedCount++;
 
@@ -1142,7 +1113,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         current_holder_name: isReturned ? null : tr.to_user_name,
         location: tr.location_after || 'Kho Studio',
         due_date: isReturned ? null : tr.due_date,
-      });
+      }, false);
 
       dispatchToSheets('update_transfer', {
         transferId: trId,
@@ -1153,20 +1124,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           receiver_photos: receiverPhotos || [],
         }
       });
-
-      dispatchToSheets('update_asset_status', {
-        assetCode: tr.asset_code,
-        status: isReturned ? 'available' : 'in_use',
-        holderName: isReturned ? null : tr.to_user_name,
-        location: tr.location_after || 'Kho Studio',
-        dueDate: isReturned ? null : tr.due_date,
-        alertReason: null,
-      });
     }
 
     addLog('transfer_confirm', 'Mượn – Trả', `Xác nhận nhận Combo hàng loạt (${confirmedCount} thiết bị)`);
     return { success: true, count: confirmedCount };
-  }, [transfers, currentUser, canManageEquipment, updateAsset, dispatchToSheets, addLog]);
+  }, [transfers, currentUser, canEditTransfers, updateAsset, dispatchToSheets, addLog]);
 
   const updateTransfer = (id: string, updates: Partial<TransferRecord>) => {
     const target = transfers.find(t => t.id === id);
@@ -1199,7 +1161,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (transfer.status !== 'pending') return { success: false, error: 'Giao dịch không ở trạng thái chờ' };
 
     const isRecipient = currentUser.id === transfer.to_user_id;
-    const isAuthorizedOverride = canManageEquipment;
+    const isAuthorizedOverride = currentUser.role !== 'staff' && canEditTransfers;
 
     if (!isRecipient && !isAuthorizedOverride) {
       return { 
@@ -1208,7 +1170,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       };
     }
 
-    if (currentUser.id === transfer.from_user_id && !isAuthorizedOverride) {
+    if (currentUser.id === transfer.from_user_id) {
       return {
         success: false,
         error: 'Người giao/trả không được phép tự xác nhận đã nhận lại thiết bị!'
@@ -1243,7 +1205,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       current_holder_name: nextHolder ? nextHolder.full_name : null,
       location: nextLocation,
       due_date: nextDueDate,
-    });
+    }, false);
 
     // 🔔 THÔNG BÁO CHO NGƯỜI GIAO RẰNG BÊN NHẬN ĐÃ XÁC NHẬN XONG
     const confirmTitle = `✅ Bàn giao hoàn tất`;
@@ -1286,16 +1248,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     });
 
-    // Cập nhật trạng thái máy trên Google Sheets sheet THIET_BI
-    dispatchToSheets('update_asset_status', {
-      assetCode: transfer.asset_code,
-      status: nextStatus,
-      holderName: nextHolder ? nextHolder.full_name : '',
-      location: nextLocation,
-      dueDate: nextDueDate,
-      alertReason: null,
-    });
-
     addLog('transfer_confirm', 'Mượn – Trả', `Xác nhận nhận thiết bị ${transfer.asset_name} (${transfer.asset_code}) thành công`);
 
     return { success: true };
@@ -1303,7 +1255,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const rejectTransfer = (transferId: string, reason: string): { success: boolean } => {
     const transfer = transfers.find(t => t.id === transferId);
-    if (!transfer) return { success: false };
+    if (!transfer || transfer.status !== 'pending' || currentUser.id === transfer.from_user_id ||
+        (currentUser.id !== transfer.to_user_id && !(currentUser.role !== 'staff' && canEditTransfers))) return { success: false };
 
     setTransfers(prev => prev.map(t => {
       if (t.id === transferId) {
@@ -1323,15 +1276,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (asset) {
       updateAsset(asset.id, {
         status: prevStatus,
-      });
+      }, false);
 
-      // Cập nhật Google Sheets
-      dispatchToSheets('update_asset_status', {
-        assetCode: asset.code,
-        status: prevStatus,
-        holderName: asset.current_holder_name || '',
-        location: asset.location,
-      });
     }
 
     // Cập nhật trạng thái giao dịch trên Google Sheets
@@ -1450,7 +1396,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       current_holder_id: params.actualHolderId,
       status: params.actualStatus,
       updated_at: new Date().toISOString(),
-    });
+    }, false);
 
     // Đồng bộ kiểm kê sang Google Sheets sheet KIEM_KE
     const session = auditSessions.find(s => s.id === params.sessionId);
@@ -1509,7 +1455,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   // Chấm công GPS & Quản lý danh sách chấm công
-  const recordAttendance = (data: {
+  const attendancePendingRef = React.useRef(false);
+  const recordAttendance = async (data: {
     type: AttendanceType;
     locationName: string;
     latitude?: number | null;
@@ -1521,6 +1468,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const user = currentUserRef.current;
     if (!user) return { success: false, error: 'Chưa đăng nhập' };
 
+    if (attendancePendingRef.current) return { success: false, error: 'Đang ghi nhận chấm công. Vui lòng chờ.' };
+    const invalid = attendanceError(attendance, user.id, data.type);
+    if (invalid) return { success: false, error: invalid };
     const typeLabels: Record<AttendanceType, string> = {
       check_in: 'Vào ca (Studio)',
       check_out: 'Tan ca (Studio)',
@@ -1545,10 +1495,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       notes: data.notes?.trim() || '',
     };
 
-    setAttendance(prev => [newRecord, ...prev]);
-
-    // Đồng bộ sang Google Sheets tab CHAM_CONG
-    dispatchToSheets('append_attendance', { record: newRecord });
+    attendancePendingRef.current = true;
+    try {
+      const response = await fetch('/api/sheets', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'append_attendance', payload: { record: newRecord } }),
+      });
+      const result = await response.json();
+      if (!response.ok || !result.success) {
+        void syncWithGoogleSheets(true);
+        return { success: false, error: result.error || 'Không thể lưu chấm công.' };
+      }
+      if (authenticatedUserIdRef.current !== user.id) return { success: false, error: 'Phiên đăng nhập đã thay đổi.' };
+      setAttendance(prev => [newRecord, ...prev]);
+    } catch {
+      return { success: false, error: 'Mất kết nối. Hãy làm mới danh sách trước khi thử lại.' };
+    } finally {
+      attendancePendingRef.current = false;
+    }
 
     const actionType: LogAction = data.type.includes('check_in') ? 'attendance_check_in' : 'attendance_check_out';
     addLog(

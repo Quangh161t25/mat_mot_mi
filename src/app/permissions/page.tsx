@@ -104,9 +104,12 @@ export default function PermissionsPage() {
   } = useApp();
 
   // Chế độ hiển thị bảng:
-  // 'staff_rows' = Cột trái: Nhân viên, Bên phải: Module & Quyền
-  // 'module_rows' = Cột trái: Module & Quyền, Bên phải: Danh sách Nhân viên
+  // Hai cột đầu đổi chỗ và nhóm theo nhân viên hoặc module.
   const [viewMode, setViewMode] = useState<'staff_rows' | 'module_rows'>('staff_rows');
+
+  const [layout, setLayout] = useState<'table' | 'detail'>('detail');
+  const [selectedStaffId, setSelectedStaffId] = useState('');
+  const [selectedModuleKey, setSelectedModuleKey] = useState('assets');
 
   // Bộ lọc
   const [search, setSearch] = useState('');
@@ -143,6 +146,17 @@ export default function PermissionsPage() {
       return matchSearch && matchRole;
     });
   }, [profiles, search, roleFilter]);
+
+  const selectedStaff = filteredProfiles.find(person => person.id === selectedStaffId) || filteredProfiles[0];
+  const selectedModule = MODULE_GROUPS.find(group => group.key === selectedModuleKey) || MODULE_GROUPS[0];
+  const visibleProfiles = layout === 'detail' && viewMode === 'staff_rows'
+    ? (selectedStaff ? [selectedStaff] : []) : filteredProfiles;
+  const visibleModules = layout === 'detail' && viewMode === 'module_rows'
+    ? [selectedModule] : MODULE_GROUPS;
+
+  const permissionRows = viewMode === 'staff_rows'
+    ? visibleProfiles.flatMap(person => visibleModules.map((group, index) => ({ person, group, first: index === 0 })))
+    : visibleModules.flatMap(group => visibleProfiles.map((person, index) => ({ person, group, first: index === 0 })));
 
   // Kiểm tra 1 quyền cụ thể của 1 user
   const checkPermission = (userId: string, moduleKey: string, permKey: string): boolean => {
@@ -346,8 +360,8 @@ export default function PermissionsPage() {
             <ArrowUpDown className="w-4 h-4" />
             <span>
               {viewMode === 'staff_rows' 
-                ? 'Đổi Chiều: Module làm Hàng ⇄ Nhân Viên làm Cột' 
-                : 'Đổi Chiều: Nhân Viên làm Hàng ⇄ Module làm Cột'}
+                ? 'Đổi chỗ: Module → Nhân viên'
+                : 'Đổi chỗ: Nhân viên → Module'}
             </span>
           </button>
 
@@ -369,6 +383,23 @@ export default function PermissionsPage() {
           </button>
         </div>
       </div>
+
+      <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Kiểu xem phân quyền">
+        {([{ key: 'table', label: 'Bảng tổng' }, { key: 'detail', label: 'Xem chi tiết' }] as const).map(item => (
+          <button key={item.key} type="button" aria-pressed={layout === item.key} onClick={() => setLayout(item.key)} className={`px-4 py-2 rounded-xl text-sm font-bold border transition ${layout === item.key ? 'bg-orange-50 border-orange-300 text-orange-700' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'}`}>{item.label}</button>
+        ))}
+        {layout === 'detail' && <span className="text-xs text-slate-500">{viewMode === 'staff_rows' ? 'Chọn nhân viên để xem quyền theo module' : 'Chọn module để xem quyền của từng nhân viên'}</span>}
+      </div>
+
+      {layout === 'detail' && (
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="inline-flex p-1 rounded-xl bg-slate-100 border border-slate-200" role="group" aria-label="Xem theo nhân viên hoặc module">
+            <button type="button" aria-pressed={viewMode === 'staff_rows'} onClick={() => setViewMode('staff_rows')} className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition ${viewMode === 'staff_rows' ? 'bg-white text-orange-700 shadow-sm' : 'text-slate-600 hover:bg-white/60'}`}><Users className="w-4 h-4" />Theo nhân viên</button>
+            <button type="button" aria-pressed={viewMode === 'module_rows'} onClick={() => setViewMode('module_rows')} className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition ${viewMode === 'module_rows' ? 'bg-white text-orange-700 shadow-sm' : 'text-slate-600 hover:bg-white/60'}`}><Boxes className="w-4 h-4" />Theo module</button>
+          </div>
+          <span className="text-xs text-slate-500">{viewMode === 'staff_rows' ? 'Nhân viên bên trái → Module và quyền bên phải' : 'Module bên trái → Nhân viên và quyền bên phải'}</span>
+        </div>
+      )}
 
       {/* Thông báo kết quả lưu */}
       {saveSuccessMsg && (
@@ -397,9 +428,9 @@ export default function PermissionsPage() {
       {/* 2. THANH CÔNG CỤ TÌM KIẾM, LỌC & CÀI ĐẶT LƯU */}
       {/* ======================================================== */}
       <div className="bg-white border border-slate-200 rounded-3xl p-4 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
-        <div className="flex items-center gap-2.5 flex-1 flex-wrap">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 flex-1 flex-wrap">
           {/* Tìm kiếm */}
-          <div className="relative flex-1 min-w-[220px] max-w-sm">
+          <div className="relative sm:flex-1 min-w-0 w-full sm:min-w-[220px] sm:max-w-sm">
             <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
             <input
               type="text"
@@ -453,385 +484,101 @@ export default function PermissionsPage() {
       {/* 3. MA TRẬN DẠNG BẢNG: 2 CHẾ ĐỘ CÓ THỂ ĐỔI CHỖ CHO NHAU */}
       {/* ======================================================== */}
 
-      {/* -------------------------------------------------------- */}
-      {/* CHẾ ĐỘ A: CỘT TRÁI = NHÂN VIÊN, CỘT BÊN PHẢI = MODULES & QUYỀN */}
-      {/* -------------------------------------------------------- */}
-      {viewMode === 'staff_rows' && (
-        <div className="bg-white border border-slate-200 rounded-3xl shadow-sm overflow-hidden flex flex-col">
-          {/* Chú thích chế độ */}
-          <div className="px-5 py-3 bg-slate-50/80 border-b border-slate-200 flex items-center justify-between text-xs">
-            <div className="font-bold text-slate-700 flex items-center gap-2">
-              <span className="w-2.5 h-2.5 rounded-full bg-orange-600" />
-              <span>Chế độ 1: <strong>Nhân Viên</strong> theo dòng dọc (Cột trái) ⇄ <strong>Module & Quyền</strong> theo cột ngang (Bên phải)</span>
+      <div className={layout === 'detail' ? 'grid grid-cols-1 md:grid-cols-[240px_minmax(0,1fr)] gap-4 items-start' : ''}>
+        {layout === 'detail' && (
+          <aside className="bg-white border border-slate-200 rounded-2xl overflow-hidden" aria-label={viewMode === 'staff_rows' ? 'Danh sách nhân viên' : 'Danh sách module'}>
+            <div className="p-3 border-b bg-slate-50 font-bold text-sm text-slate-700">{viewMode === 'staff_rows' ? 'Nhân viên' : 'Module'}</div>
+            <div className="md:hidden p-3">
+              <select aria-label={viewMode === 'staff_rows' ? 'Chọn nhân viên' : 'Chọn module'} value={viewMode === 'staff_rows' ? selectedStaff?.id || '' : selectedModule.key} onChange={event => viewMode === 'staff_rows' ? setSelectedStaffId(event.target.value) : setSelectedModuleKey(event.target.value)} className="w-full p-2 border border-slate-200 rounded-xl bg-white text-slate-800">
+                {viewMode === 'staff_rows' ? (filteredProfiles.length ? filteredProfiles.map(person => <option key={person.id} value={person.id}>{person.full_name}</option>) : <option value="">Không có nhân viên phù hợp</option>) : MODULE_GROUPS.map(group => <option key={group.key} value={group.key}>{group.label}</option>)}
+              </select>
+              {viewMode === 'staff_rows' && selectedStaff && (isAdmin || canManageUsers) && <select aria-label="Mẫu quyền cho nhân viên đang chọn" value="" onChange={event => handleApplyUserPreset(selectedStaff.id, event.target.value as 'admin' | 'manager' | 'staff' | 'none')} className="w-full mt-2 p-2 border border-slate-200 rounded-xl bg-white text-slate-700"><option value="" disabled>Mẫu quyền nhanh</option><option value="admin">Admin</option><option value="manager">Quản lý</option><option value="staff">Nhân viên</option><option value="none">Tắt tất cả</option></select>}
             </div>
-            <span className="text-slate-400 text-[11px] font-medium hidden sm:inline">
-              Cuộn ngang để xem đủ 20 quyền chi tiết
-            </span>
-          </div>
-
-          <div className="overflow-x-auto max-h-[75vh]">
-            <table className="w-full text-left border-collapse text-xs">
-              {/* Table Header: 2 tầng */}
-              <thead className="sticky top-0 z-20 bg-slate-100/95 backdrop-blur-md shadow-xs select-none">
-                {/* Tầng 1: Tên các Module */}
-                <tr className="border-b border-slate-200">
-                  {/* Cột cố định trái: Nhân viên */}
-                  <th 
-                    rowSpan={2} 
-                    className="sticky left-0 z-30 bg-slate-100 p-3.5 min-w-[240px] max-w-[280px] font-black text-slate-900 border-r border-slate-200 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.08)]"
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <Users className="w-4 h-4 text-orange-600" />
-                        <span>Nhân Viên ({filteredProfiles.length})</span>
-                      </div>
-                    </div>
-                  </th>
-
-                  {/* Các nhóm Module */}
-                  {MODULE_GROUPS.map(group => {
-                    const Icon = group.icon;
-                    return (
-                      <th
-                        key={group.key}
-                        colSpan={group.span}
-                        className="p-2.5 text-center font-black border-r border-slate-200 last:border-r-0 text-slate-800 text-[11px] sm:text-xs"
-                      >
-                        <div className="flex items-center justify-center gap-1.5">
-                          <Icon className={`w-3.5 h-3.5 ${group.color}`} />
-                          <span>{group.label}</span>
-                        </div>
-                      </th>
-                    );
-                  })}
-
-                  {/* Cột Thao tác Preset nhanh */}
-                  <th rowSpan={2} className="p-3 text-center font-bold text-slate-700 min-w-[130px]">
-                    Thao Tác Nhanh
-                  </th>
-                </tr>
-
-                {/* Tầng 2: Tên các quyền con (Xem, Thêm, Sửa, Xóa) */}
-                <tr className="border-b border-slate-200 text-[11px] text-slate-600">
-                  {PERMISSION_COLUMNS.map(col => (
-                    <th
-                      key={col.id}
-                      className="p-2 text-center min-w-[56px] border-r border-slate-200/80 font-bold hover:bg-slate-200/50 transition"
-                      title={`${col.moduleTitle} - ${col.permTitle}`}
-                    >
-                      <span className={`px-1 py-0.5 rounded text-[10px] ${col.badgeBg}`}>
-                        {col.shortLabel}
-                      </span>
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-
-              {/* Table Body: Mỗi dòng là 1 nhân viên */}
-              <tbody className="divide-y divide-slate-100">
-                {filteredProfiles.length === 0 ? (
-                  <tr>
-                    <td colSpan={PERMISSION_COLUMNS.length + 2} className="p-8 text-center text-slate-400">
-                      Không tìm thấy nhân viên nào phù hợp bộ lọc.
-                    </td>
-                  </tr>
-                ) : (
-                  filteredProfiles.map(person => {
-                    const isMe = person.id === currentUser.id;
-                    const enabledCount = countEnabledPerms(person.id);
-
-                    return (
-                      <tr 
-                        key={person.id} 
-                        className="hover:bg-orange-50/30 transition group"
-                      >
-                        {/* Cột trái cố định: Thông tin nhân viên */}
-                        <td className="sticky left-0 z-10 bg-white group-hover:bg-orange-50/40 p-3 border-r border-slate-200 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.08)] transition">
-                          <div className="flex items-center gap-2.5">
-                            {/* eslint-disable-next-line @next/next/no-img-element */}
-                            <img
-                              src={person.avatar_url || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150'}
-                              alt={person.full_name}
-                              className="w-9 h-9 rounded-xl object-cover ring-1 ring-slate-200 shrink-0"
-                            />
-                            <div className="min-w-0">
-                              <div className="font-bold text-slate-900 text-xs sm:text-sm truncate flex items-center gap-1.5">
-                                <span>{person.full_name}</span>
-                                {isMe && (
-                                  <span className="text-[9px] px-1.5 py-0.2 bg-orange-100 text-orange-700 font-bold rounded shrink-0">
-                                    Bạn
-                                  </span>
-                                )}
-                              </div>
-                              <div className="flex items-center gap-1.5 text-[10px] text-slate-500 mt-0.5">
-                                <span className={`px-1.5 py-0.2 rounded font-mono font-bold ${
-                                  person.role === 'admin' ? 'bg-rose-100 text-rose-700' :
-                                  person.role === 'manager' ? 'bg-amber-100 text-amber-800' :
-                                  'bg-blue-100 text-blue-700'
-                                }`}>
-                                  {person.role.toUpperCase()}
-                                </span>
-                                <span>•</span>
-                                <span className="font-semibold text-slate-600">{enabledCount}/20 quyền</span>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-
-                        {/* Các ô Checkbox quyền */}
-                        {PERMISSION_COLUMNS.map(col => {
-                          const isChecked = checkPermission(person.id, col.moduleKey, col.permKey);
-
-                          return (
-                            <td
-                              key={col.id}
-                              onClick={() => handleToggleCell(person.id, col.moduleKey, col.permKey)}
-                              className={`p-2 text-center border-r border-slate-100 cursor-pointer transition select-none ${
-                                isChecked ? 'bg-emerald-50/40 hover:bg-emerald-100/60' : 'hover:bg-slate-100/80'
-                              } ${!isAdmin && !canManageUsers ? 'cursor-not-allowed opacity-75' : ''}`}
-                              title={`${person.full_name}: ${col.moduleTitle} - ${col.permTitle} (${isChecked ? 'BẬT' : 'TẮT'})`}
-                            >
-                              <div className="flex items-center justify-center">
-                                <div className={`w-5 h-5 rounded-lg flex items-center justify-center transition ${
-                                  isChecked 
-                                    ? 'bg-emerald-600 text-white shadow-xs scale-105' 
-                                    : 'border-2 border-slate-300 bg-white hover:border-slate-400'
-                                }`}>
-                                  {isChecked && <Check className="w-3.5 h-3.5 stroke-[3]" />}
-                                </div>
-                              </div>
-                            </td>
-                          );
-                        })}
-
-                        {/* Cột Preset mẫu nhanh */}
-                        <td className="p-2 text-center whitespace-nowrap">
-                          <div className="flex items-center justify-center gap-1">
-                            <button
-                              type="button"
-                              onClick={() => handleApplyUserPreset(person.id, 'admin')}
-                              className="px-2 py-1 text-[10px] font-bold bg-rose-50 hover:bg-rose-600 hover:text-white text-rose-700 rounded-lg transition"
-                              title="Bật toàn bộ quyền (Admin)"
-                            >
-                              Admin
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleApplyUserPreset(person.id, 'manager')}
-                              className="px-2 py-1 text-[10px] font-bold bg-amber-50 hover:bg-amber-600 hover:text-white text-amber-800 rounded-lg transition"
-                              title="Áp dụng mẫu Quản lý"
-                            >
-                              QL
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleApplyUserPreset(person.id, 'staff')}
-                              className="px-2 py-1 text-[10px] font-bold bg-blue-50 hover:bg-blue-600 hover:text-white text-blue-700 rounded-lg transition"
-                              title="Áp dụng mẫu Nhân viên"
-                            >
-                              NV
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleApplyUserPreset(person.id, 'none')}
-                              className="px-1.5 py-1 text-[10px] font-bold bg-slate-100 hover:bg-rose-600 hover:text-white text-slate-600 rounded-lg transition"
-                              title="Tắt toàn bộ quyền"
-                            >
-                              ✕
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
+            <div className="hidden md:block max-h-[70vh] overflow-y-auto p-2 space-y-1">
+              {viewMode === 'staff_rows' ? (filteredProfiles.length ? filteredProfiles.map(person => (
+                <button type="button" key={person.id} aria-pressed={selectedStaff?.id === person.id} onClick={() => setSelectedStaffId(person.id)} className={`w-full text-left p-3 rounded-xl transition ${selectedStaff?.id === person.id ? 'bg-orange-50 text-orange-700 ring-1 ring-orange-200' : 'text-slate-700 hover:bg-slate-50'}`}>
+                  <span className="block text-sm font-semibold break-words">{person.full_name}</span>
+                  <span className="block mt-1 text-xs text-slate-500">{person.role === 'admin' ? 'Admin' : person.role === 'manager' ? 'Quản lý' : 'Nhân viên'} · {countEnabledPerms(person.id)}/{PERMISSION_COLUMNS.length} quyền</span>
+                </button>
+              )) : <p className="p-3 text-xs text-slate-500">Không tìm thấy nhân viên phù hợp.</p>) : MODULE_GROUPS.map(group => {
+                const Icon = group.icon;
+                return <button type="button" key={group.key} aria-pressed={selectedModule.key === group.key} onClick={() => setSelectedModuleKey(group.key)} className={`w-full flex items-center gap-2 text-left p-3 rounded-xl text-sm font-semibold transition ${selectedModule.key === group.key ? 'bg-orange-50 text-orange-700 ring-1 ring-orange-200' : 'text-slate-700 hover:bg-slate-50'}`}><Icon className={`w-4 h-4 ${group.color}`} />{group.label}</button>;
+              })}
+            </div>
+          </aside>
+        )}
+      <div className="min-w-0 bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
+        <div className="px-4 py-3 border-b bg-slate-50 text-xs text-slate-600">
+          {layout === 'detail' ? (viewMode === 'staff_rows' ? `Phân quyền: ${selectedStaff?.full_name || 'Chưa chọn nhân viên'}` : `Module: ${selectedModule.label}`) : (viewMode === 'staff_rows' ? 'Nhóm theo nhân viên' : 'Nhóm theo module')} · {visibleProfiles.length} nhân viên · {visibleModules.length} module
         </div>
-      )}
-
-      {/* -------------------------------------------------------- */}
-      {/* CHẾ ĐỘ B: CỘT TRÁI = MODULE & QUYỀN, CỘT BÊN PHẢI = NHÂN VIÊN */}
-      {/* -------------------------------------------------------- */}
-      {viewMode === 'module_rows' && (
-        <div className="bg-white border border-slate-200 rounded-3xl shadow-sm overflow-hidden flex flex-col">
-          {/* Chú thích chế độ */}
-          <div className="px-5 py-3 bg-slate-50/80 border-b border-slate-200 flex items-center justify-between text-xs">
-            <div className="font-bold text-slate-700 flex items-center gap-2">
-              <span className="w-2.5 h-2.5 rounded-full bg-emerald-600" />
-              <span>Chế độ 2: <strong>Module & Quyền</strong> theo dòng dọc (Cột trái) ⇄ <strong>Nhân Viên</strong> theo cột ngang (Bên phải)</span>
-            </div>
-            <span className="text-slate-400 text-[11px] font-medium hidden sm:inline">
-              Xem và đối soát theo từng quyền hạn cụ thể
-            </span>
-          </div>
-
-          <div className="overflow-x-auto max-h-[75vh]">
-            <table className="w-full text-left border-collapse text-xs">
-              {/* Table Header: Danh sách các nhân viên */}
-              <thead className="sticky top-0 z-20 bg-slate-100/95 backdrop-blur-md shadow-xs select-none">
-                <tr className="border-b border-slate-200">
-                  {/* Cột cố định trái: Module & Quyền */}
-                  <th className="sticky left-0 z-30 bg-slate-100 p-3.5 min-w-[260px] max-w-[320px] font-black text-slate-900 border-r border-slate-200 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.08)]">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <Boxes className="w-4 h-4 text-orange-600" />
-                        <span>Module & Quyền Hạn (20)</span>
-                      </div>
-                    </div>
-                  </th>
-
-                  {/* Mỗi nhân viên là 1 cột */}
-                  {filteredProfiles.map(person => {
-                    const isMe = person.id === currentUser.id;
-                    const enabledCount = countEnabledPerms(person.id);
-
-                    return (
-                      <th
-                        key={person.id}
-                        className="p-3 text-center min-w-[130px] border-r border-slate-200/80 font-bold hover:bg-slate-200/50 transition align-top"
-                      >
-                        <div className="flex flex-col items-center gap-1.5">
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img
-                            src={person.avatar_url || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150'}
-                            alt={person.full_name}
-                            className="w-8 h-8 rounded-xl object-cover ring-1 ring-slate-200 shrink-0"
-                          />
-                          <div className="text-center">
-                            <div className="text-xs font-bold text-slate-900 truncate max-w-[120px]">
-                              {person.full_name}
-                            </div>
-                            <div className="text-[10px] text-slate-500 font-mono mt-0.5">
-                              {person.role.toUpperCase()}
-                            </div>
-                            <div className="text-[9px] text-emerald-700 font-semibold">
-                              {enabledCount} quyền bật
-                            </div>
-                          </div>
-
-                          {/* Quick preset buttons per column */}
-                          <div className="flex items-center gap-1 mt-1">
-                            <button
-                              type="button"
-                              onClick={() => handleApplyUserPreset(person.id, 'all')}
-                              className="px-1.5 py-0.5 bg-emerald-50 hover:bg-emerald-600 hover:text-white text-emerald-700 rounded text-[9px] font-bold"
-                              title="Bật hết"
-                            >
-                              Tất cả
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleApplyUserPreset(person.id, 'none')}
-                              className="px-1.5 py-0.5 bg-rose-50 hover:bg-rose-600 hover:text-white text-rose-700 rounded text-[9px] font-bold"
-                              title="Tắt hết"
-                            >
-                              Tắt
-                            </button>
-                          </div>
-                        </div>
-                      </th>
-                    );
-                  })}
-                </tr>
-              </thead>
-
-              {/* Table Body: Mỗi dòng là 1 Quyền của Module */}
-              <tbody className="divide-y divide-slate-100">
-                {PERMISSION_COLUMNS.map((col, index) => {
-                  // Đặt phân cách trực quan khi đổi sang module mới
-                  const isFirstOfModule = index === 0 || PERMISSION_COLUMNS[index - 1].moduleKey !== col.moduleKey;
-
-                  return (
-                    <React.Fragment key={col.id}>
-                      {/* Tiêu đề phân cách Module nếu bắt đầu nhóm mới */}
-                      {isFirstOfModule && (
-                        <tr className="bg-slate-100/70 border-y border-slate-200 font-black text-slate-800 text-xs">
-                          <td 
-                            colSpan={filteredProfiles.length + 1}
-                            className="py-2 px-4 sticky left-0 z-10 bg-slate-100 font-bold"
-                          >
-                            <span className="flex items-center gap-2">
-                              <span className="w-2 h-2 rounded-full bg-orange-600" />
-                              <span>Module {col.moduleTitle}</span>
-                            </span>
-                          </td>
-                        </tr>
-                      )}
-
-                      <tr className="hover:bg-orange-50/30 transition group">
-                        {/* Cột trái cố định: Tên quyền & Module */}
-                        <td className="sticky left-0 z-10 bg-white group-hover:bg-orange-50/40 p-3 border-r border-slate-200 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.08)] transition">
-                          <div className="flex items-center justify-between gap-2">
-                            <div>
-                              <div className="font-bold text-slate-900 text-xs flex items-center gap-1.5">
-                                <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${col.badgeBg}`}>
-                                  {col.shortLabel}
-                                </span>
-                                <span>{col.permTitle}</span>
-                              </div>
-                              <div className="text-[10px] text-slate-400 mt-0.5">
-                                Thuộc module: <strong className="text-slate-600">{col.moduleTitle}</strong>
-                              </div>
-                            </div>
-
-                            {/* Nút bật/tắt cả dòng cho tất cả nhân viên */}
-                            <div className="flex items-center gap-1 shrink-0">
-                              <button
-                                type="button"
-                                onClick={() => handleToggleAllUsersForPermission(col.moduleKey, col.permKey, true)}
-                                className="px-1.5 py-0.5 bg-slate-50 hover:bg-emerald-600 hover:text-white text-slate-500 rounded text-[9px] font-bold"
-                                title="Bật quyền này cho tất cả nhân viên"
-                              >
-                                Bật hết
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => handleToggleAllUsersForPermission(col.moduleKey, col.permKey, false)}
-                                className="px-1.5 py-0.5 bg-slate-50 hover:bg-rose-600 hover:text-white text-slate-500 rounded text-[9px] font-bold"
-                                title="Tắt quyền này cho tất cả nhân viên"
-                              >
-                                Tắt hết
-                              </button>
-                            </div>
-                          </div>
-                        </td>
-
-                        {/* Các ô Checkbox theo từng nhân viên */}
-                        {filteredProfiles.map(person => {
-                          const isChecked = checkPermission(person.id, col.moduleKey, col.permKey);
-
-                          return (
-                            <td
-                              key={person.id}
-                              onClick={() => handleToggleCell(person.id, col.moduleKey, col.permKey)}
-                              className={`p-2.5 text-center border-r border-slate-100 cursor-pointer transition select-none ${
-                                isChecked ? 'bg-emerald-50/40 hover:bg-emerald-100/60' : 'hover:bg-slate-100/80'
-                              } ${!isAdmin && !canManageUsers ? 'cursor-not-allowed opacity-75' : ''}`}
-                              title={`${person.full_name}: ${col.moduleTitle} - ${col.permTitle} (${isChecked ? 'BẬT' : 'TẮT'})`}
-                            >
-                              <div className="flex items-center justify-center">
-                                <div className={`w-5 h-5 rounded-lg flex items-center justify-center transition ${
-                                  isChecked 
-                                    ? 'bg-emerald-600 text-white shadow-xs scale-105' 
-                                    : 'border-2 border-slate-300 bg-white hover:border-slate-400'
-                                }`}>
-                                  {isChecked && <Check className="w-3.5 h-3.5 stroke-[3]" />}
-                                </div>
-                              </div>
-                            </td>
-                          );
-                        })}
-                      </tr>
-                    </React.Fragment>
-                  );
+        <div className="md:hidden p-3 space-y-3">
+          {permissionRows.length === 0 && <p className="p-4 text-center text-sm text-slate-500">Không tìm thấy nhân viên phù hợp.</p>}
+          {permissionRows.map(({person, group}) => (
+            <section key={`${person.id}-${group.key}`} className="border border-slate-200 rounded-xl overflow-hidden">
+              <div className="bg-slate-50 p-3 border-b border-slate-200">
+                {(layout === 'table' || viewMode === 'module_rows') && <button type="button" onClick={() => { setSelectedStaffId(person.id); setViewMode('staff_rows'); setLayout('detail'); }} className="block text-sm font-bold text-slate-900 text-left">{person.full_name}</button>}
+                {(layout === 'table' || viewMode === 'staff_rows') && <button type="button" onClick={() => { setSelectedModuleKey(group.key); setViewMode('module_rows'); setLayout('detail'); }} className="block text-sm font-semibold text-orange-700 text-left">{group.label}</button>}
+              </div>
+              <div className="grid grid-cols-4 divide-x divide-slate-100">
+                {(['view', 'create', 'edit', 'delete'] as const).map((permKey, index) => {
+                  const definition = PERMISSION_COLUMNS.find(col => col.moduleKey === group.key && col.permKey === permKey);
+                  return <label key={permKey} className={`flex flex-col items-center gap-3 py-4 text-xs font-semibold ${definition ? 'text-slate-700' : 'text-slate-300'}`}>
+                    {['Xem', 'Thêm', 'Sửa', 'Xóa'][index]}
+                    {definition ? <input type="checkbox" checked={checkPermission(person.id, group.key, permKey)} disabled={!isAdmin && !canManageUsers} onChange={() => handleToggleCell(person.id, group.key, permKey)} aria-label={`${person.full_name} · ${group.label} · ${definition.permTitle}`} className="accent-emerald-600" /> : <span>—</span>}
+                  </label>;
                 })}
-              </tbody>
-            </table>
-          </div>
+              </div>
+            </section>
+          ))}
         </div>
-      )}
+        <div className="hidden md:block overflow-auto max-h-[75vh]">
+          <table className="w-full min-w-[640px] text-sm border-collapse">
+            <thead className="sticky top-0 z-20 bg-slate-100 text-slate-700">
+              <tr>
+                {layout === 'table' && <th scope="col" className="p-3 text-left border-r border-b w-[28%]">{viewMode === 'staff_rows' ? 'Nhân viên' : 'Module'}</th>}
+                <th scope="col" className="p-3 text-left border-r border-b w-[28%]">{viewMode === 'staff_rows' ? 'Module' : 'Nhân viên'}</th>
+                {['Xem', 'Thêm', 'Sửa', 'Xóa'].map(label => <th scope="col" key={label} className="p-3 text-center border-r border-b last:border-r-0">{label}</th>)}
+              </tr>
+            </thead>
+            <tbody>
+              {filteredProfiles.length === 0 ? (
+                <tr><td colSpan={layout === 'detail' ? 5 : 6} className="p-10 text-center text-slate-500">Không tìm thấy nhân viên phù hợp.</td></tr>
+              ) : (viewMode === 'staff_rows'
+                ? visibleProfiles.flatMap(person => visibleModules.map((group, index) => ({ person, group, first: index === 0 })))
+                : visibleModules.flatMap(group => visibleProfiles.map((person, index) => ({ person, group, first: index === 0 })))
+              ).map(({ person, group, first }) => {
+                const staffCell = (
+                  <div>
+                    <div className="font-semibold text-slate-900"><button type="button" onClick={() => { setSelectedStaffId(person.id); setViewMode('staff_rows'); setLayout('detail'); }} className="text-left hover:text-orange-600 hover:underline">{person.full_name}</button>{person.id === currentUser.id && <span className="ml-2 text-xs text-orange-600">(Bạn)</span>}</div>
+                    <div className="mt-1 text-xs text-slate-500">{person.role === 'admin' ? 'Admin' : person.role === 'manager' ? 'Quản lý' : 'Nhân viên'} · {countEnabledPerms(person.id)}/{PERMISSION_COLUMNS.length} quyền</div>
+                    {(isAdmin || canManageUsers) && <select aria-label={`Áp dụng mẫu quyền cho ${person.full_name}`} value="" onChange={e => handleApplyUserPreset(person.id, e.target.value as 'admin' | 'manager' | 'staff' | 'none')} className="mt-2 max-w-full rounded border border-slate-200 p-1 text-xs bg-white">
+                      <option value="" disabled>Mẫu quyền nhanh</option>
+                      <option value="admin">Admin</option><option value="manager">Quản lý</option><option value="staff">Nhân viên</option><option value="none">Tắt tất cả</option>
+                    </select>}
+                  </div>
+                );
+                const Icon = group.icon;
+                const moduleCell = <div className="flex items-center gap-2 font-semibold text-slate-700"><Icon className={`w-4 h-4 shrink-0 ${group.color}`} /><button type="button" onClick={() => { setSelectedModuleKey(group.key); setViewMode('module_rows'); setLayout('detail'); }} className="text-left hover:text-orange-600 hover:underline">{group.label}</button></div>;
+                return (
+                  <tr key={`${person.id}-${group.key}`} className={`hover:bg-orange-50/30 ${first ? 'border-t-2 border-slate-200' : 'border-t border-slate-100'}`}>
+                    {layout === 'table' && first && <th scope="rowgroup" rowSpan={viewMode === 'staff_rows' ? MODULE_GROUPS.length : filteredProfiles.length} className="p-3 text-left align-top border-r border-slate-200 bg-slate-50/70">{viewMode === 'staff_rows' ? staffCell : moduleCell}</th>}
+                    <th scope="row" className="p-3 text-left border-r border-slate-200 font-normal">{viewMode === 'staff_rows' ? moduleCell : staffCell}</th>
+                    {(['view', 'create', 'edit', 'delete'] as const).map(permKey => {
+                      const definition = PERMISSION_COLUMNS.find(col => col.moduleKey === group.key && col.permKey === permKey);
+                      const checked = checkPermission(person.id, group.key, permKey);
+                      return <td key={permKey} className="p-3 text-center border-r border-slate-100 last:border-r-0">
+                        {definition ? <input type="checkbox" checked={checked} disabled={!isAdmin && !canManageUsers} onChange={() => handleToggleCell(person.id, group.key, permKey)} aria-label={`${person.full_name} · ${group.label} · ${definition.permTitle}`} className="w-5 h-5 rounded accent-emerald-600 cursor-pointer disabled:cursor-not-allowed" /> : <span className="text-slate-300" title="Module không hỗ trợ quyền này">—</span>}
+                      </td>;
+                    })}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      </div>
 
       {/* ======================================================== */}
       {/* 4. CHÚ THÍCH & HƯỚNG DẪN */}
@@ -848,7 +595,7 @@ export default function PermissionsPage() {
               <span>Click ô trực tiếp</span>
             </div>
             <p className="text-[11px] text-slate-500">
-              Nhấp trực tiếp vào ô vuông để bật hoặc tắt quyền. Nếu bật "Lưu tự động", mọi thay đổi sẽ đồng bộ ngay lập tức lên Google Sheets tab PHAN_QUYEN.
+              Nhấp trực tiếp vào ô vuông để bật hoặc tắt quyền. Nếu bật &quot;Lưu tự động&quot;, mọi thay đổi sẽ đồng bộ ngay lập tức lên Google Sheets tab PHAN_QUYEN.
             </p>
           </div>
 
@@ -858,7 +605,7 @@ export default function PermissionsPage() {
               <span>Đổi chiều linh hoạt</span>
             </div>
             <p className="text-[11px] text-slate-500">
-              Bấm nút <strong>"Đổi Chiều"</strong> màu cam ở góc trên để hoán đổi danh sách nhân viên sang cột ngang hoặc dòng dọc tùy theo thói quen quan sát.
+              Bấm nút <strong>&quot;Đổi chỗ&quot;</strong> màu cam để hoán đổi hai cột Nhân viên và Module. Bảng được nhóm theo cột đứng đầu; các cột Xem, Thêm, Sửa, Xóa giữ nguyên.
             </p>
           </div>
 

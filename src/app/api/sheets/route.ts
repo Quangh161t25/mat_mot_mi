@@ -1,7 +1,8 @@
+import { attendanceError } from '@/lib/attendance';
+import { authenticatedData, hashPassword, sameOrigin } from '@/lib/auth';
+import { authorizeAction, permittedData } from '@/lib/api-permissions';
 import { NextResponse } from 'next/server';
 import { 
-  fetchAllFromSheets, 
-  getCachedSheetsData,
   appendAssetToSheet,
   updateAssetInSheet,
   deleteAssetInSheet,
@@ -23,7 +24,6 @@ import {
   deleteComboFromSheet,
   appendAttendanceToSheet,
   deleteAttendanceFromSheet,
-  SPREADSHEET_ID, 
   getSheetsClient,
   getGoogleAuthDiagnostics
 } from '@/lib/google-sheets';
@@ -36,7 +36,6 @@ export const maxDuration = 15;
 
 const corsAndNoCacheHeaders = {
   'Content-Type': 'application/json',
-  'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type, Authorization, Pragma, Cache-Control',
   'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0',
@@ -53,70 +52,55 @@ export async function OPTIONS() {
 }
 
 export async function GET(req: Request) {
-  const diag = getGoogleAuthDiagnostics();
-  const url = new URL(req.url);
-  const forceRefresh = url.searchParams.has('fresh') || url.searchParams.has('t');
   try {
-    const data = await fetchAllFromSheets(forceRefresh);
-    return NextResponse.json({
-      success: true,
-      connected: true,
-      spreadsheetId: SPREADSHEET_ID,
-      diagnostics: diag,
-      data,
-    }, {
-      headers: corsAndNoCacheHeaders
-    });
-  } catch (err: any) {
-    console.error('API Google Sheets GET error:', err);
-    // Google báo vượt Quota: trả dữ liệu thật gần nhất trong RAM hoặc Disk thay vì báo lỗi
-    const stale = getCachedSheetsData();
-    if (stale) {
-      return NextResponse.json({
-        success: true,
-        connected: true,
-        stale: true,
-        spreadsheetId: SPREADSHEET_ID,
-        diagnostics: diag,
-        data: stale,
-      }, { headers: corsAndNoCacheHeaders });
-    }
-
-    const isQuota = err.message && (err.message.includes('Quota exceeded') || err.message.includes('rateLimitExceeded'));
-    if (isQuota) {
-      return NextResponse.json({
-        success: true,
-        connected: true,
-        isQuotaThrottled: true,
-        spreadsheetId: SPREADSHEET_ID,
-        diagnostics: diag,
-        data: null,
-        warning: 'Google Sheets tạm bận Quota, ứng dụng tiếp tục chạy bình thường với dữ liệu sẵn có.',
-      }, { 
-        status: 200,
-        headers: corsAndNoCacheHeaders
-      });
-    }
-
-    // Luôn trả về 200 để client frontend không bao giờ bị ném lỗi Failed to fetch
-    return NextResponse.json({
-      success: false,
-      connected: false,
-      spreadsheetId: SPREADSHEET_ID,
-      diagnostics: diag,
-      error: err.message || 'Lỗi đọc dữ liệu Google Sheets',
-    }, { 
-      status: 200,
-      headers: corsAndNoCacheHeaders
-    });
+    const session = await authenticatedData(new URL(req.url).searchParams.has('fresh'));
+    if (!session) return NextResponse.json({ success: false, error: 'Vui lòng đăng nhập.' }, { status: 401, headers: corsAndNoCacheHeaders });
+    return NextResponse.json({ success: true, connected: true, data: permittedData(session.data, session.user) }, { headers: corsAndNoCacheHeaders });
+  } catch {
+    return NextResponse.json({ success: false, connected: false, error: 'Không thể đọc Google Sheets. Vui lòng thử lại.' }, { status: 503, headers: corsAndNoCacheHeaders });
   }
 }
 
+const attendanceWrites = new Set<string>();
+
 export async function POST(req: Request) {
+  if (!sameOrigin(req)) return NextResponse.json({ success: false, error: 'Yêu cầu không hợp lệ.' }, { status: 403 });
   try {
+    const session = await authenticatedData();
+    if (!session) return NextResponse.json({ success: false, error: 'Vui lòng đăng nhập.' }, { status: 401 });
     const body = await req.json();
     const { action, payload } = body;
 
+    if (!authorizeAction(session.user, session.data, action, payload)) {
+      return NextResponse.json({ success: false, error: 'Bạn không có quyền thực hiện thao tác này.' }, { status: 403 });
+    }
+    const user = session.user;
+    // Never trust identity, roles, or display names supplied by the browser.
+    if (action === 'append_log') {
+      payload.log = { ...payload.log, user_id: user.id, user_name: user.full_name, user_role: user.role, details: undefined };
+    }
+    if (action === 'append_attendance') {
+      payload.record = { ...payload.record, user_id: user.id, user_name: user.full_name, user_role: user.role, user_avatar: user.avatar_url, timestamp: new Date().toISOString() };
+    }
+    if (action === 'append_audit') {
+      payload.item = { ...payload.item, scanned_by_id: user.id, scanned_by_name: user.full_name };
+    }
+    for (const t of action === 'append_transfer' ? [payload.transfer] : action === 'append_combo_transfer' ? payload.transfers : []) {
+      const asset = session.data.assets.find(a => a.code === t.asset_code)!;
+      const receiver = session.data.profiles.find(p => p.id === t.to_user_id)!;
+      Object.assign(t, { from_user_id: user.id, from_user_name: user.full_name, to_user_name: receiver.full_name, asset_name: asset.name, created_at: new Date().toISOString() });
+    }
+    if (action === 'append_staff' || action === 'update_staff') {
+      const profile = action === 'append_staff' ? payload.profile : payload.updates;
+      if (profile.password !== undefined) {
+        if (typeof profile.password !== 'string' || profile.password.trim().length < 4 || profile.password.length > 256) {
+          return NextResponse.json({ success: false, error: 'Mật khẩu phải có từ 4 đến 256 ký tự.' }, { status: 400 });
+        }
+        profile.password = hashPassword(profile.password.trim());
+      } else if (action === 'append_staff') {
+        return NextResponse.json({ success: false, error: 'Vui lòng nhập mật khẩu cho nhân sự mới.' }, { status: 400 });
+      }
+    }
     const sheets = getSheetsClient();
     if (!sheets) {
       const diag = getGoogleAuthDiagnostics();
@@ -179,11 +163,27 @@ export async function POST(req: Request) {
         return NextResponse.json({ success: true }, { headers: corsAndNoCacheHeaders });
 
       case 'update_transfer':
-        await updateTransferInSheet(payload.transferId, payload.updates);
+        await updateTransferInSheet(payload.transferId, {
+          ...payload.updates,
+          ...(payload.updates.status === 'completed' ? { confirmed_at: new Date().toISOString() } : {}),
+        });
+        if (['completed', 'rejected'].includes(payload.updates.status)) {
+          const transfer = session.data.transfers.find(t => t.id === payload.transferId)!;
+          const asset = session.data.assets.find(a => a.code === transfer.asset_code)!;
+          const completed = payload.updates.status === 'completed';
+          const returned = transfer.transfer_type === 'return';
+          await updateAssetInSheet(transfer.asset_code, completed ? {
+            status: returned ? 'available' : 'in_use',
+            current_holder_name: returned ? '' : transfer.to_user_name,
+            location: transfer.location_after || asset.location,
+            due_date: returned ? null : transfer.due_date,
+            alert_reason: null,
+          } : { status: asset.current_holder_id ? 'in_use' : 'available' });
+        }
         return NextResponse.json({ success: true }, { headers: corsAndNoCacheHeaders });
 
       case 'delete_transfer':
-        await deleteTransferInSheet(payload.id);
+        await deleteTransferInSheet(payload.transferId);
         return NextResponse.json({ success: true }, { headers: corsAndNoCacheHeaders });
 
       case 'batch_delete_transfers':
@@ -204,10 +204,17 @@ export async function POST(req: Request) {
       // 4. Kiểm kê
       case 'append_audit':
         await appendAuditToSheet(payload.item, payload.sessionTitle || 'Kiểm kê');
+        await updateAssetInSheet(payload.item.asset_code, {
+          location: payload.item.actual_location,
+          current_holder_name: session.data.profiles.find(p => p.id === payload.item.actual_holder_id)?.full_name || '',
+          status: payload.item.actual_status,
+        });
         return NextResponse.json({ success: true }, { headers: corsAndNoCacheHeaders });
 
       case 'delete_audit_item':
-        await deleteAuditItemInSheet(payload.assetCode, payload.sessionId);
+        const item = session.data.auditItems.find(i => i.id === payload.id);
+        if (!item) return NextResponse.json({ success: false }, { status: 404 });
+        await deleteAuditItemInSheet(item.asset_code, item.session_id);
         return NextResponse.json({ success: true }, { headers: corsAndNoCacheHeaders });
 
       case 'delete_audit_session':
@@ -241,9 +248,20 @@ export async function POST(req: Request) {
         return NextResponse.json({ success: true }, { headers: corsAndNoCacheHeaders });
 
       // 7. Chấm công (CHAM_CONG)
-      case 'append_attendance':
-        await appendAttendanceToSheet(payload.record);
-        return NextResponse.json({ success: true }, { headers: corsAndNoCacheHeaders });
+      case 'append_attendance': {
+        if (attendanceWrites.has(user.id)) return NextResponse.json({ success: false, error: 'Đang ghi nhận chấm công. Vui lòng chờ.' }, { status: 409 });
+        attendanceWrites.add(user.id);
+        try {
+          const latest = await authenticatedData(true);
+          if (!latest) return NextResponse.json({ success: false, error: 'Vui lòng đăng nhập lại.' }, { status: 401 });
+          const invalid = attendanceError(latest.data.attendance || [], user.id, payload.record.type);
+          if (invalid) return NextResponse.json({ success: false, error: invalid }, { status: 409 });
+          await appendAttendanceToSheet(payload.record);
+          return NextResponse.json({ success: true }, { headers: corsAndNoCacheHeaders });
+        } finally {
+          attendanceWrites.delete(user.id);
+        }
+      }
 
       case 'delete_attendance':
         await deleteAttendanceFromSheet(payload.id);
@@ -262,7 +280,7 @@ export async function POST(req: Request) {
     console.error('API Google Sheets POST error:', err);
     return NextResponse.json({
       success: false,
-      error: err.message || 'Lỗi ghi dữ liệu Google Sheets',
+      error: 'Không thể ghi dữ liệu Google Sheets. Vui lòng thử lại.',
     }, { 
       status: 500,
       headers: corsAndNoCacheHeaders

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import jsQR from 'jsqr';
 import { Camera, X, Upload, Search, RefreshCw, AlertCircle } from 'lucide-react';
 import { Asset } from '@/types';
@@ -20,14 +20,16 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
 }) => {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const [stream, setStream] = useState<MediaStream | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const cameraRequestRef = useRef(0);
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [manualCode, setManualCode] = useState('');
   const [isScanning, setIsScanning] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const animationFrameRef = useRef<number | null>(null);
 
-  const startCamera = async () => {
+  const startCamera = useCallback(async () => {
+    const requestId = ++cameraRequestRef.current;
     setCameraError(null);
     try {
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
@@ -42,7 +44,12 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
         },
       });
 
-      setStream(mediaStream);
+      if (requestId !== cameraRequestRef.current) {
+        mediaStream.getTracks().forEach(track => track.stop());
+        return;
+      }
+      streamRef.current?.getTracks().forEach(track => track.stop());
+      streamRef.current = mediaStream;
       if (videoRef.current) {
         videoRef.current.srcObject = mediaStream;
         await videoRef.current.play();
@@ -55,19 +62,31 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
       );
       setIsScanning(false);
     }
-  };
+  }, []);
 
-  const stopCamera = () => {
+  const stopCamera = useCallback(() => {
+    cameraRequestRef.current++;
     if (animationFrameRef.current) {
       cancelAnimationFrame(animationFrameRef.current);
       animationFrameRef.current = null;
     }
-    if (stream) {
-      stream.getTracks().forEach(track => track.stop());
-      setStream(null);
-    }
+    streamRef.current?.getTracks().forEach(track => track.stop());
+    streamRef.current = null;
     setIsScanning(false);
-  };
+  }, []);
+
+  const handleDetectedCode = useCallback((rawData: string) => {
+    let extracted = rawData.trim();
+    if (extracted.includes('/assets/')) {
+      const parts = extracted.split('/assets/');
+      extracted = parts[parts.length - 1].split('?')[0].split('#')[0];
+    }
+
+    stopCamera();
+    onScanSuccess(extracted);
+    onClose();
+  }, [stopCamera, onScanSuccess, onClose]);
+
 
   useEffect(() => {
     if (isOpen) {
@@ -78,7 +97,7 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
     return () => {
       stopCamera();
     };
-  }, [isOpen]);
+  }, [isOpen, startCamera, stopCamera]);
 
   // Frame processing loop
   useEffect(() => {
@@ -116,19 +135,8 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
         cancelAnimationFrame(animationFrameRef.current);
       }
     };
-  }, [isScanning]);
+  }, [isScanning, handleDetectedCode]);
 
-  const handleDetectedCode = (rawData: string) => {
-    let extracted = rawData.trim();
-    if (extracted.includes('/assets/')) {
-      const parts = extracted.split('/assets/');
-      extracted = parts[parts.length - 1].split('?')[0].split('#')[0];
-    }
-
-    stopCamera();
-    onScanSuccess(extracted);
-    onClose();
-  };
 
   // Upload file fallback
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {

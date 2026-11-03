@@ -231,7 +231,7 @@ export default function AssetsPage() {
           </p>
         </div>
 
-        <div className="flex items-center gap-2.5">
+        <div className="flex items-center gap-2.5 flex-wrap">
           <button
             onClick={() => setIsPrintModalOpen(true)}
             className="flex items-center gap-2 px-3.5 py-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 rounded-xl text-xs sm:text-sm font-semibold transition shadow-sm"
@@ -343,18 +343,49 @@ export default function AssetsPage() {
           <p className="text-sm text-slate-500">Không tìm thấy thiết bị nào phù hợp.</p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="grid grid-cols-2 lg:grid-cols-3 gap-2.5 sm:gap-4">
           {filteredAssets.map(asset => {
             const isSelected = selectedIds.includes(asset.id);
             return (
+              <React.Fragment key={asset.id}>
+              <article className={`md:hidden min-w-0 flex flex-col bg-white border rounded-2xl overflow-hidden shadow-sm ${isSelected ? 'border-orange-500 ring-2 ring-orange-100' : 'border-slate-200'}`}>
+                <div className="relative bg-slate-100">
+                  <button type="button" aria-label={`Xem thiết bị ${asset.name}`} onClick={() => setViewingAsset(asset)} className="block w-full aspect-[4/3]">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={asset.image_url} alt={asset.name} loading="lazy" className="w-full h-full object-cover" />
+                  </button>
+                  {canDeleteAssets && <button type="button" aria-label={`Chọn ${asset.name}`} aria-pressed={isSelected} onClick={() => handleToggleSelect(asset.id)} className="absolute top-1 left-1 w-11 h-11 flex items-center justify-center rounded-xl bg-white/95 border border-slate-200">{isSelected ? <CheckSquare className="w-5 h-5 text-orange-600" /> : <Square className="w-5 h-5 text-slate-400" />}</button>}
+                </div>
+                <div className="p-2.5 flex flex-1 flex-col gap-2">
+                  <span className="font-mono text-[10px] font-bold text-orange-700 break-all">{asset.code}</span>
+                  <button type="button" onClick={() => setViewingAsset(asset)} className="text-left text-sm leading-5 font-bold text-slate-900 line-clamp-2">{asset.name}</button>
+                  <span className={`self-start rounded-lg px-2 py-1 text-[11px] font-semibold ${asset.status === 'available' ? 'bg-emerald-50 text-emerald-700' : asset.status === 'in_use' ? 'bg-amber-50 text-amber-800' : asset.status === 'pending_transfer' ? 'bg-orange-50 text-orange-700' : 'bg-rose-50 text-rose-700'}`}>{asset.status === 'available' ? 'Sẵn sàng' : asset.status === 'in_use' ? 'Đang sử dụng' : asset.status === 'pending_transfer' ? 'Chờ xác nhận' : 'Cần xử lý'}</span>
+                  <div className="space-y-1.5 text-xs text-slate-600 break-words">
+                    <p className="flex items-start gap-1"><MapPin className="w-3.5 h-3.5 shrink-0 mt-0.5" /><span className="line-clamp-2">{asset.location}</span></p>
+                    <p className="flex items-start gap-1"><User className="w-3.5 h-3.5 shrink-0 mt-0.5" /><span className="line-clamp-2">{asset.current_holder_name || 'Kho Studio'}</span></p>
+                  </div>
+                  <div className="mt-auto pt-2 border-t border-slate-100 space-y-1">
+                    {canCreateTransfers && <button type="button" onClick={() => { setSelectedAssetForTransfer(asset); setIsTransferModalOpen(true); }} className="w-full flex items-center justify-center gap-1 px-2 py-2 rounded-xl text-xs font-bold bg-orange-50 text-orange-700"><ArrowRightLeft className="w-4 h-4 shrink-0" />Bàn giao</button>}
+                    <details>
+                      <summary className="min-h-11 flex items-center justify-center cursor-pointer text-xs font-semibold text-slate-600 rounded-xl bg-slate-50">Thao tác ▾</summary>
+                      <div className="grid grid-cols-1 gap-1 pt-1">
+                        <button type="button" onClick={() => setViewingAsset(asset)} className="text-left px-2 text-xs text-blue-700">Xem chi tiết</button>
+                        {canEditAssets && <button type="button" onClick={() => handleOpenEdit(asset)} className="text-left px-2 text-xs text-slate-700">Sửa thiết bị</button>}
+                        <button type="button" onClick={() => setSelectedAssetForIssue(asset)} className="text-left px-2 text-xs text-amber-700">Báo sự cố</button>
+                        {canDeleteAssets && <button type="button" onClick={() => handleDeleteSingle(asset)} className="text-left px-2 text-xs text-rose-700">Xóa thiết bị</button>}
+                      </div>
+                    </details>
+                  </div>
+                </div>
+              </article>
               <div
                 key={asset.id}
-                className={`bg-white border rounded-2xl overflow-hidden flex flex-col justify-between transition group shadow-sm hover:shadow-md ${
+                className={`min-w-0 bg-white border rounded-2xl overflow-hidden hidden md:flex flex-col justify-between transition group shadow-sm hover:shadow-md ${
                   isSelected ? 'border-orange-500 ring-2 ring-orange-500/20 bg-orange-50/10' : 'border-slate-200 hover:border-orange-300'
                 }`}
               >
                 {/* Asset Image & Badge Banner */}
-                <div className="relative aspect-[16/9] w-full bg-slate-100 overflow-hidden">
+                <div className="relative aspect-[2/1] sm:aspect-[16/9] w-full bg-slate-100 overflow-hidden">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
                     src={asset.image_url}
@@ -432,7 +463,7 @@ export default function AssetsPage() {
                         title="Xem chi tiết thiết bị"
                       >
                         <Eye className="w-4 h-4 text-blue-600" />
-                        <span className="hidden sm:inline">Chi tiết</span>
+                        <span>Chi tiết</span>
                       </button>
 
                       {/* Sửa */}
@@ -443,7 +474,7 @@ export default function AssetsPage() {
                           title="Chỉnh sửa thông tin thiết bị"
                         >
                           <Pencil className="w-4 h-4 text-amber-600" />
-                          <span className="hidden sm:inline">Sửa</span>
+                          <span>Sửa</span>
                         </button>
                       )}
 
@@ -455,7 +486,7 @@ export default function AssetsPage() {
                           title="Xóa thiết bị này"
                         >
                           <Trash2 className="w-4 h-4 text-rose-600" />
-                          <span className="hidden sm:inline">Xóa</span>
+                          <span>Xóa</span>
                         </button>
                       )}
                     </div>
@@ -485,6 +516,7 @@ export default function AssetsPage() {
                   </div>
                 </div>
               </div>
+              </React.Fragment>
             );
           })}
         </div>

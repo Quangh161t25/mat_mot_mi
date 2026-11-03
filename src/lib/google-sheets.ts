@@ -144,14 +144,17 @@ function writeDiskCache(data: any): void {
 }
 
 // In-memory cache để tiết kiệm Quota Google Sheets (Google cho phép tối đa 60 read/phút)
-let cachedData: {
+interface SheetsData {
   assets: Asset[];
   profiles: UserProfile[];
   transfers: TransferRecord[];
   auditItems: AuditItem[];
   auditSessions: AuditSession[];
   logs: ActivityLog[];
-} | null = null;
+  combos: EquipmentCombo[];
+  attendance: AttendanceRecord[];
+}
+let cachedData: SheetsData | null = null;
 let lastFetchTimestamp = 0;
 const CACHE_TTL_MS = 5000; // 5 giây cache máy chủ (chống nghẽn khi nhiều máy gọi cùng giây, nhưng đồng bộ tức thì)
 
@@ -171,7 +174,7 @@ export function invalidateSheetsCache() {
 // ==========================================
 // 1. ĐỌC TOÀN BỘ DỮ LIỆU TỪ GOOGLE SHEETS (Dùng batchGet - 1 request duy nhất)
 // ==========================================
-export async function fetchAllFromSheets(forceRefresh = false) {
+export async function fetchAllFromSheets(forceRefresh = false, strict = false): Promise<SheetsData> {
   const now = Date.now();
   // 1. Ưu tiên trả về Memory Cache nếu còn trong hạn 15s
   if (!forceRefresh && cachedData && (now - lastFetchTimestamp < CACHE_TTL_MS)) {
@@ -269,7 +272,7 @@ export async function fetchAllFromSheets(forceRefresh = false) {
           status: (row[5] || 'active') as any,
           avatar_url: row[6] || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150',
           created_at: row[7] || new Date().toISOString(),
-          password: row[8] || (row[4] === 'admin' ? 'admin' : '123456'),
+          password: row[8] || '',
           permissions: parsedPermissions,
         };
       });
@@ -428,6 +431,7 @@ export async function fetchAllFromSheets(forceRefresh = false) {
     return result;
   } catch (err: any) {
     console.warn('Lỗi gọi Google Sheets (Quota hoặc mạng):', err.message);
+    if (strict) throw err;
     // Nếu Google nghẽn Quota hoặc mạng chậm, ưu tiên trả về dữ liệu bộ đệm gần nhất
     if (cachedData) {
       return cachedData;

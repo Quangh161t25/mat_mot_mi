@@ -27,8 +27,7 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
-  maximumScale: 1,
-  userScalable: false,
+  viewportFit: 'cover',
   themeColor: '#EA580C',
 };
 
@@ -42,7 +41,7 @@ export default function RootLayout({
       <body className={`${inter.className} bg-slate-50 text-slate-900 antialiased min-h-screen flex flex-col font-sans`}>
         <AppProvider>
           <Navbar />
-          <main className="flex-1 pb-24 md:pb-12 max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 pt-4 sm:pt-6">
+          <main className="app-main min-w-0 flex-1 pb-24 md:pb-12 max-w-7xl mx-auto w-full px-3 sm:px-6 lg:px-8 pt-4 sm:pt-6">
             {children}
           </main>
         </AppProvider>

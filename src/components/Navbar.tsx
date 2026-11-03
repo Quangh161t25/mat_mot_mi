@@ -21,7 +21,9 @@ import {
   LogOut,
   LogIn,
   ShieldCheck,
-  Clock
+  Clock,
+  Menu,
+  X
 } from 'lucide-react';
 import { QRScannerModal } from './QRScannerModal';
 import { InstallAppModal } from './InstallAppModal';
@@ -59,6 +61,7 @@ export const Navbar: React.FC = () => {
     canViewAttendance
   } = useApp();
 
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const [isInstallModalOpen, setIsInstallModalOpen] = useState(false);
@@ -91,15 +94,15 @@ export const Navbar: React.FC = () => {
   return (
     <>
       {/* Top Header */}
-      <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-slate-200 px-4 lg:px-8 py-2.5 sm:py-3 no-print shadow-sm">
-        <div className="max-w-7xl mx-auto flex items-center justify-between gap-4">
+      <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-slate-200 px-3 lg:px-8 py-2.5 sm:py-3 no-print shadow-sm">
+        <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-2 sm:gap-4">
           {/* Logo & Studio Brand */}
           <Link href="/" className="flex items-center gap-2.5 sm:gap-3 group">
             <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-orange-600 flex items-center justify-center text-white shadow-md shadow-orange-600/30 group-hover:scale-105 transition">
               <Camera className="w-5 h-5" />
             </div>
             <div>
-              <div className="text-base sm:text-lg font-black tracking-tight text-slate-900 flex items-center gap-1 font-mono">
+              <div className="text-xs sm:text-lg font-black tracking-tight text-slate-900 flex items-center gap-1 font-mono">
                 MẮT MỘT MÍ <span className="text-orange-600">MEDIA</span>
               </div>
               <div className="text-[10px] text-slate-500 font-medium tracking-wide hidden sm:block">
@@ -109,7 +112,7 @@ export const Navbar: React.FC = () => {
           </Link>
 
           {/* Desktop Navigation Links */}
-          <nav className="hidden md:flex items-center gap-1 bg-slate-100/80 p-1 rounded-2xl border border-slate-200/80">
+          <nav className="hidden md:flex order-last w-full justify-center items-center gap-1 bg-slate-100/80 p-1 rounded-2xl border border-slate-200/80">
             {navLinks.map(link => {
               const Icon = link.icon;
               const isActive = pathname === link.href || (link.href !== '/' && pathname.startsWith(link.href));
@@ -171,7 +174,7 @@ export const Navbar: React.FC = () => {
             {/* Quick Scan QR Button */}
             <button
               onClick={() => setIsScannerOpen(true)}
-              className="flex items-center gap-1.5 px-3 sm:px-4 py-2 bg-orange-600 hover:bg-orange-500 text-white text-xs sm:text-sm font-bold rounded-xl shadow-md shadow-orange-600/25 transition active:scale-95"
+              className="hidden md:flex items-center gap-1.5 px-3 sm:px-4 py-2 bg-orange-600 hover:bg-orange-500 text-white text-xs sm:text-sm font-bold rounded-xl shadow-md shadow-orange-600/25 transition active:scale-95"
             >
               <QrCode className="w-4 h-4" />
               <span>Quét QR</span>
@@ -229,7 +232,7 @@ export const Navbar: React.FC = () => {
 
                 {/* User Dropdown Menu */}
                 {isUserMenuOpen && (
-                  <div className="absolute right-0 mt-2 w-80 bg-white border border-slate-200 rounded-2xl shadow-xl p-3 z-50 animate-in fade-in zoom-in-95 duration-150">
+                  <div className="absolute right-0 mt-2 w-[min(20rem,calc(100vw-1.5rem))] bg-white border border-slate-200 rounded-2xl shadow-xl p-3 z-50 animate-in fade-in zoom-in-95 duration-150">
                     <div className="p-2 border-b border-slate-100 flex items-center gap-3">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
@@ -364,42 +367,27 @@ export const Navbar: React.FC = () => {
           </button>
         </div>
       </div>
-      <div className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-lg border-t border-slate-200 px-2 py-1.5 flex items-center justify-around no-print shadow-lg">
-        {navLinks.map(link => {
+      {isMobileMenuOpen && (
+        <div className="md:hidden fixed inset-0 z-50 bg-slate-950/50 backdrop-blur-sm flex items-end" onClick={() => setIsMobileMenuOpen(false)}>
+          <section role="dialog" aria-modal="true" aria-label="Menu chức năng" className="w-full bg-white rounded-t-3xl p-4 mobile-sheet max-h-[85dvh] overflow-y-auto" onClick={event => event.stopPropagation()} onKeyDown={event => { if (event.key === 'Escape') setIsMobileMenuOpen(false); }}>
+            <div className="flex items-center justify-between mb-4"><h2 className="text-lg font-bold">Chức năng</h2><button type="button" autoFocus aria-label="Đóng menu" onClick={() => setIsMobileMenuOpen(false)} className="p-3 rounded-xl bg-slate-100"><X className="w-5 h-5" /></button></div>
+            <div className="grid grid-cols-2 gap-2">
+              {navLinks.map(link => { const Icon = link.icon; return <Link key={link.href} href={link.href} onClick={() => setIsMobileMenuOpen(false)} aria-current={pathname === link.href ? 'page' : undefined} className={`flex items-center gap-3 p-4 rounded-2xl border text-sm font-semibold ${pathname === link.href ? 'bg-orange-50 text-orange-700 border-orange-200' : 'bg-slate-50 border-slate-100 text-slate-700'}`}><Icon className="w-5 h-5 shrink-0" />{link.label}</Link>; })}
+            </div>
+            <button type="button" onClick={() => { setIsMobileMenuOpen(false); setIsInstallModalOpen(true); }} className="w-full flex items-center gap-3 p-4 mt-3 bg-slate-100 rounded-2xl text-sm font-semibold"><Smartphone className="w-5 h-5" />Cài ứng dụng lên điện thoại</button>
+          </section>
+        </div>
+      )}
+      <nav aria-label="Điều hướng điện thoại" className="mobile-bottom-nav md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-lg border-t border-slate-200 px-1 pt-2 grid grid-cols-5 no-print shadow-lg">
+        {[navLinks.find(link => link.href === '/'), navLinks.find(link => link.href === '/assets')].map((link, index) => {
+          if (!link) return <div key={index} />;
           const Icon = link.icon;
-          const isActive = pathname === link.href || (link.href !== '/' && pathname.startsWith(link.href));
-          return (
-            <Link
-              key={link.href}
-              href={link.href}
-              className={`relative flex flex-col items-center py-1 px-2.5 rounded-xl transition ${
-                isActive ? 'text-orange-600 font-bold' : 'text-slate-500 hover:text-slate-900'
-              }`}
-            >
-              <div className="relative">
-                <Icon className="w-5 h-5" />
-                {link.badge && (
-                  <span className="absolute -top-1 -right-2 w-4 h-4 rounded-full bg-rose-500 text-white text-[9px] flex items-center justify-center font-bold">
-                    {link.badge}
-                  </span>
-                )}
-              </div>
-              <span className="text-[10px] mt-0.5">{link.label}</span>
-            </Link>
-          );
+          return <Link key={link.href} href={link.href} aria-current={pathname === link.href ? 'page' : undefined} className={`flex flex-col items-center justify-center gap-1 min-h-12 rounded-xl text-[10px] font-semibold ${pathname === link.href ? 'text-orange-600 bg-orange-50' : 'text-slate-500'}`}><Icon className="w-5 h-5" />{link.href === '/' ? 'Trang chủ' : link.label}</Link>;
         })}
-
-        {/* Center Prominent Scan Button */}
-        <button
-          onClick={() => setIsScannerOpen(true)}
-          className="flex flex-col items-center py-1 px-2 text-orange-600 hover:text-orange-700"
-        >
-          <div className="w-10 h-10 -mt-5 rounded-full bg-orange-600 flex items-center justify-center text-white shadow-lg shadow-orange-600/40">
-            <QrCode className="w-5 h-5" />
-          </div>
-          <span className="text-[10px] mt-0.5 font-bold text-slate-800">Quét QR</span>
-        </button>
-      </div>
+        <button type="button" onClick={() => setIsScannerOpen(true)} className="flex flex-col items-center justify-center gap-1 text-[10px] font-bold text-orange-700"><span className="p-2 rounded-xl bg-orange-600 text-white"><QrCode className="w-5 h-5" /></span>Quét QR</button>
+        {navLinks.some(link => link.href === '/attendance') ? <Link href="/attendance" aria-current={pathname === '/attendance' ? 'page' : undefined} className={`flex flex-col items-center justify-center gap-1 min-h-12 rounded-xl text-[10px] font-semibold ${pathname === '/attendance' ? 'text-orange-600 bg-orange-50' : 'text-slate-500'}`}><Clock className="w-5 h-5" />Chấm công</Link> : <div />}
+        <button type="button" aria-expanded={isMobileMenuOpen} onClick={() => setIsMobileMenuOpen(true)} className={`flex flex-col items-center justify-center gap-1 min-h-12 rounded-xl text-[10px] font-semibold ${!['/', '/assets', '/attendance'].includes(pathname) ? 'bg-orange-50 text-orange-600' : 'text-slate-500'}`}><Menu className="w-5 h-5" />Thêm</button>
+      </nav>
 
       {/* QR Scanner Modal */}
       <QRScannerModal

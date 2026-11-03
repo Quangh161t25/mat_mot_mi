@@ -146,7 +146,7 @@ export const TransferModal: React.FC<TransferModalProps> = ({
 
     prevIsOpenRef.current = isOpen;
     prevAssetIdRef.current = preSelectedAsset?.id || null;
-  }, [isOpen, preSelectedAsset?.id, initialCombo]);
+  }, [isOpen, preSelectedAsset, initialCombo, assets, currentUser.id]);
 
   if (!isOpen) return null;
 

@@ -29,7 +29,7 @@ export const ConfirmTransferModal: React.FC<ConfirmTransferModalProps> = ({
   onClose,
   transfer,
 }) => {
-  const { currentUser, confirmTransfer, rejectTransfer, canManageEquipment } = useApp();
+  const { currentUser, confirmTransfer, rejectTransfer, canEditTransfers } = useApp();
 
   const [receiverNotes, setReceiverNotes] = useState('');
   const [photos, setPhotos] = useState<string[]>([]);
@@ -59,7 +59,7 @@ export const ConfirmTransferModal: React.FC<ConfirmTransferModalProps> = ({
 
   const isRecipient = currentUser.id === transfer.to_user_id;
   const isGiver = currentUser.id === transfer.from_user_id;
-  const canConfirm = (isRecipient || canManageEquipment) && !isGiver;
+  const canConfirm = (isRecipient || (currentUser.role !== 'staff' && canEditTransfers)) && !isGiver;
 
   const handlePhotoCapture = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;

@@ -54,3 +54,12 @@ Hệ thống đã được đóng gói chuẩn **Progressive Web App (PWA)** v�
 npm run dev
 ```
 Truy cập: `http://localhost:3000`
+
+## Xác thực và kiểm tra
+
+- Đăng nhập bằng tài khoản và mật khẩu đã có trong tab `NHAN_SU`. Tài khoản bị khóa hoặc chưa có mật khẩu không thể đăng nhập.
+- Server xác thực bằng cookie HttpOnly có hạn 12 giờ; localStorage không cấp quyền truy cập. Khi mất kết nối Sheets, server không dùng tài khoản demo để xác thực.
+- Có thể đặt `AUTH_SECRET` thành chuỗi ngẫu nhiên ít nhất 32 byte trong `.env.local` hoặc môi trường triển khai. Khi không đặt, server dùng khóa Service Account hiện có để ký phiên. Triển khai production qua HTTPS.
+- Mật khẩu mới hoặc được đổi sẽ lưu dưới dạng scrypt. Mật khẩu cũ trong Sheets vẫn tương thích; đổi mật khẩu để chuyển sang dạng băm.
+- Sửa nhân sự: để trống ô mật khẩu sẽ giữ mật khẩu hiện tại. API không trả mật khẩu hoặc chuỗi băm về trình duyệt.
+- `npm run lint`: kiểm tra ESLint. `npm test`: kiểm tra xác thực, phân quyền và bàn giao bằng dữ liệu giả, không ghi Google Sheets thật. `npm run build`: kiểm tra bản production.

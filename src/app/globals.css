@@ -52,3 +52,24 @@ body {
     color: black !important;
   }
 }
+
+/* Phone layout, including iPhone home-indicator clearance. */
+.mobile-bottom-nav { padding-bottom: max(.5rem, env(safe-area-inset-bottom)); }
+.mobile-sheet { padding-bottom: max(1rem, env(safe-area-inset-bottom)); }
+@media (max-width: 767px) {
+  .app-main { padding-bottom: calc(6rem + env(safe-area-inset-bottom)); }
+  .app-main h1 { font-size: 1.125rem; line-height: 1.5; }
+  .app-main h1 svg { flex-shrink: 0; }
+  .app-main button, .app-main select, .app-main input:not([type="checkbox"]):not([type="radio"]):not([type="file"]), .app-main textarea { min-height: 44px; }
+  input:not([type="checkbox"]):not([type="radio"]), textarea, select { font-size: 16px; }
+  .app-main input[type="checkbox"] { width: 22px; height: 22px; }
+  .app-main .fixed.inset-0 { padding: .75rem; }
+  .app-main .fixed.inset-0 > div { max-height: calc(100dvh - 1.5rem); overflow-y: auto; }
+  .app-main .rounded-3xl { border-radius: 1rem; }
+  .app-main .p-5, .app-main .p-6 { padding: 1rem; }
+  .app-main .break-mobile { overflow-wrap: anywhere; }
+}
+
+@media (max-width: 767px) {
+  header button { min-width: 40px; min-height: 40px; }
+}

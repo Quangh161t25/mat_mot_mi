@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useApp } from '@/context/AppContext';
 import { AttendanceType, AttendanceRecord } from '@/types';
+import { latestAttendance } from '@/lib/attendance';
 import { compressImage } from '@/lib/image-utils';
 import { 
   Clock, 
@@ -150,6 +151,7 @@ export default function AttendancePage() {
   // Gửi chấm công
   const handleSubmitAttendance = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSubmitting) return;
     if (!canCreateAttendance) {
       alert('Bạn không có quyền thực hiện chấm công.');
       return;
@@ -157,7 +159,7 @@ export default function AttendancePage() {
 
     setIsSubmitting(true);
     try {
-      const res = recordAttendance({
+      const res = await recordAttendance({
         type: attendanceType,
         locationName: locationName.trim() || 'Kho Studio',
         latitude,
@@ -190,6 +192,22 @@ export default function AttendancePage() {
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  const handleQuickCheckout = async (item: AttendanceRecord) => {
+    if (isSubmitting || item.user_id !== currentUser.id || !canCreateAttendance) return;
+    setIsSubmitting(true);
+    try {
+      const result = await recordAttendance({
+        type: item.type === 'show_check_in' ? 'show_check_out' : 'check_out',
+        locationName: item.location_name, latitude, longitude, accuracy,
+        photoUrl: photo || undefined, notes: notes.trim(),
+      });
+      if (result.success) {
+        setSubmitSuccess('Đã ra ca và lưu Google Sheets thành công.');
+        setPhoto(null); setNotes('');
+      } else alert(result.error || 'Không thể ra ca.');
+    } finally { setIsSubmitting(false); }
   };
 
   // Lọc dữ liệu danh sách chấm công
@@ -831,7 +849,7 @@ export default function AttendancePage() {
             </div>
 
             {/* Records List / Cards */}
-            <div className="space-y-3 max-h-[680px] overflow-y-auto pr-1">
+            <div className="space-y-3 lg:max-h-[680px] lg:overflow-y-auto lg:pr-1">
               {filteredRecords.length === 0 ? (
                 <div className="p-8 text-center text-slate-400 bg-slate-50 rounded-2xl border border-dashed border-slate-200">
                   <Clock className="w-8 h-8 mx-auto mb-2 opacity-50" />
@@ -859,7 +877,7 @@ export default function AttendancePage() {
                       className="p-4 rounded-2xl bg-slate-50/70 hover:bg-white border border-slate-200 hover:border-slate-300 transition shadow-sm space-y-2.5"
                     >
                       {/* Row 1: Person & Status */}
-                      <div className="flex items-start justify-between gap-3">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
                         <div className="flex items-center gap-3">
                           {/* eslint-disable-next-line @next/next/no-img-element */}
                           <img
@@ -868,7 +886,7 @@ export default function AttendancePage() {
                             className="w-10 h-10 rounded-xl object-cover ring-1 ring-slate-200 shrink-0"
                           />
                           <div>
-                            <div className="font-bold text-slate-900 text-xs sm:text-sm flex items-center gap-1.5">
+                            <div className="font-bold text-slate-900 text-xs sm:text-sm flex flex-wrap items-center gap-1.5">
                               <span>{item.user_name}</span>
                               <span className="text-[10px] px-1.5 py-0.2 bg-slate-200 text-slate-700 rounded font-mono font-semibold">
                                 {item.user_role}
@@ -881,8 +899,11 @@ export default function AttendancePage() {
                         </div>
 
                         {/* Badge */}
-                        <div className="shrink-0">
+                        <div className="shrink-0 flex flex-wrap items-center justify-end gap-2">
                           {getAttendanceBadge(item.type)}
+                          {canCreateAttendance && item.user_id === currentUser.id && item.type.endsWith('check_in') && latestAttendance(attendance, item.user_id, item.type.startsWith('show_'))?.id === item.id && (
+                            <button type="button" disabled={isSubmitting} onClick={() => handleQuickCheckout(item)} className="px-3 py-1.5 rounded-lg bg-orange-600 hover:bg-orange-500 text-white text-xs font-bold disabled:opacity-50">{isSubmitting ? 'Đang lưu...' : item.type === 'show_check_in' ? 'Ra show' : 'Ra ca'}</button>
+                          )}
                         </div>
                       </div>
 
@@ -894,7 +915,7 @@ export default function AttendancePage() {
                         </div>
 
                         {/* GPS Coordinates & Google Maps Link */}
-                        <div className="flex items-center gap-2">
+                        <div className="flex flex-wrap items-center gap-2">
                           {item.latitude && item.longitude ? (
                             <a
                               href={item.map_url || `https://www.google.com/maps?q=${item.latitude},${item.longitude}`}

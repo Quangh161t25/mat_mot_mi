@@ -371,7 +371,7 @@ export default function TransfersPage() {
           {filteredTransfers.map(tr => {
             const isRecipient = currentUser.id === tr.to_user_id;
             const isGiver = currentUser.id === tr.from_user_id;
-            const canConfirm = isRecipient || canManageEquipment;
+            const canConfirm = !isGiver && (isRecipient || (currentUser.role !== 'staff' && canEditTransfers));
             const isSelected = selectedIds.includes(tr.id);
 
             return (

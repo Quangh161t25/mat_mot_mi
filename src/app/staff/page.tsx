@@ -109,7 +109,7 @@ export default function StaffPage() {
     setEditEmail(person.email);
     setEditPhone(person.phone || '');
     setEditRole(person.role);
-    setEditPassword(person.password || (person.role === 'admin' ? 'admin' : '123456'));
+    setEditPassword('');
     setEditStatus(person.status);
   };
 
@@ -122,7 +122,7 @@ export default function StaffPage() {
       email: editEmail.trim().toLowerCase(),
       phone: editPhone.trim(),
       role: editRole,
-      password: editPassword.trim() || '123456',
+      ...(editPassword.trim() ? { password: editPassword.trim() } : {}),
       status: editStatus,
     });
 
@@ -381,7 +381,7 @@ export default function StaffPage() {
                   {canManageUsers && (
                     <div className="flex items-center gap-2 text-slate-500">
                       <KeyRound className="w-3.5 h-3.5 text-orange-500 shrink-0" />
-                      <span>Mật khẩu: <strong className="font-mono text-slate-800">{person.password || (person.role === 'admin' ? 'admin' : '123456')}</strong></span>
+                      <span>Mật khẩu: <strong className="font-mono text-slate-800">Đã được bảo vệ</strong></span>
                     </div>
                   )}
                 </div>
@@ -521,7 +521,7 @@ export default function StaffPage() {
                 {canManageUsers && (
                   <div>
                     <span className="text-slate-400 block text-[11px]">Mật khẩu:</span>
-                    <strong className="font-mono text-orange-700">{viewingProfile.password || (viewingProfile.role === 'admin' ? 'admin' : '123456')}</strong>
+                    <strong className="font-mono text-orange-700">Đã được bảo vệ</strong>
                   </div>
                 )}
                 <div>
@@ -631,6 +631,7 @@ export default function StaffPage() {
                 <div className="relative">
                   <input
                     type={showEditPassword ? 'text' : 'password'}
+                    placeholder="Để trống để giữ mật khẩu hiện tại"
                     value={editPassword}
                     onChange={e => setEditPassword(e.target.value)}
                     className="w-full pl-3 pr-10 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm text-slate-900 font-mono focus:outline-none focus:border-orange-500 focus:bg-white"
